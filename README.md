@@ -1,5 +1,7 @@
 # CUPS MCP Server
 
+![CUPS MCP Server](cups.png)
+
 A standalone MCP (Model Context Protocol) server that provides complete document creation, editing, and printing capabilities via CUPS on Linux systems. 
 
 **Key Value**: This server enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities - no Claude Code or other specific tools required. Your AI can read, edit, create, validate, and print documents just like a desktop application.
