@@ -19,6 +19,21 @@ def check_command(cmd: str) -> bool:
     return shutil.which(cmd) is not None
 
 
+# Check for LaTeX fonts
+def check_latex_fonts() -> bool:
+    """Check if essential LaTeX fonts are available."""
+    try:
+        # Try to find Latin Modern Roman font (essential for XeLaTeX)
+        result = subprocess.run(
+            ["kpsewhich", "lmroman10-regular.otf"],
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
 # Dependency checks
 DEPENDENCIES = {
     "pandoc": {
@@ -27,9 +42,14 @@ DEPENDENCIES = {
         "install_hint": "Install with: apt install pandoc, dnf install pandoc, or pacman -S pandoc"
     },
     "xelatex": {
-        "available": check_command("xelatex") or check_command("pdflatex"),
-        "description": "LaTeX (for PDF generation from pandoc)",
-        "install_hint": "Install with: apt install texlive-xetex, dnf install texlive-xetex, or pacman -S texlive-core"
+        "available": check_command("xelatex"),
+        "description": "XeLaTeX (for PDF generation from pandoc)",
+        "install_hint": "Install with: apt install texlive-xetex, dnf install texlive-xetex, or pacman -S texlive-xetex"
+    },
+    "latex_fonts": {
+        "available": check_latex_fonts(),
+        "description": "LaTeX fonts (Latin Modern, etc.)",
+        "install_hint": "Install with: apt install texlive-fonts-recommended, dnf install texlive-collection-fontsrecommended, or pacman -S texlive-fontsrecommended"
     }
 }
 
@@ -244,8 +264,8 @@ def print_text(content: str, printer: Optional[str] = None) -> str:
         Path(temp_path).unlink()
 
 
-# Only register print_markdown if pandoc is available
-if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"]:
+# Only register print_markdown if all dependencies are available
+if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
     def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
         """Print markdown content (rendered to PDF via pandoc).
@@ -270,7 +290,10 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"]:
                 "-o", pdf_path,
                 "--metadata", f"title={title}",
                 "--pdf-engine=xelatex",
-                "-V", "geometry:margin=1in"
+                "-V", "geometry:margin=1in",
+                "-V", "mainfont=Noto Serif",
+                "-V", "sansfont=Noto Sans",
+                "-V", "monofont=Noto Sans Mono"
             ]
             result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
             
@@ -305,6 +328,8 @@ else:
             missing.append(DEPENDENCIES["pandoc"]["install_hint"])
         if not DEPENDENCIES["xelatex"]["available"]:
             missing.append(DEPENDENCIES["xelatex"]["install_hint"])
+        if not DEPENDENCIES["latex_fonts"]["available"]:
+            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
         
         return f"Markdown printing is not available. Missing dependencies:\n" + "\n".join(missing)
 

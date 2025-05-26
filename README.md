@@ -21,10 +21,23 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
   - Debian/Ubuntu: `apt install pandoc`
   - Fedora: `dnf install pandoc`
   - Arch: `pacman -S pandoc`
-- `texlive` or `xelatex` - For PDF generation from pandoc
-  - Debian/Ubuntu: `apt install texlive-xetex`
-  - Fedora: `dnf install texlive-xetex`
-  - Arch: `pacman -S texlive-core`
+- `xelatex` - For PDF generation from pandoc (requires XeLaTeX and fonts)
+  - **Debian/Ubuntu**: 
+    ```bash
+    apt install texlive-xetex texlive-fonts-recommended texlive-latex-recommended
+    ```
+  - **Fedora**: 
+    ```bash
+    dnf install texlive-xetex texlive-collection-fontsrecommended
+    ```
+  - **Arch**: 
+    ```bash
+    pacman -S texlive-xetex texlive-fontsrecommended
+    ```
+  - Note: Basic texlive packages alone are not sufficient. You need:
+    - XeLaTeX format files (`texlive-xetex`)
+    - Latin Modern and other standard fonts (`texlive-fonts-recommended` or equivalent)
+    - LaTeX packages for pandoc (`texlive-latex-recommended` on Debian/Ubuntu)
 
 The server will check for these dependencies at startup and only enable features that have their requirements met. Missing dependencies will be reported with installation instructions.
 
