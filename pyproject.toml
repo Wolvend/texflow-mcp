@@ -1,0 +1,15 @@
+[project]
+name = "cups-mcp"
+version = "0.1.0"
+description = "MCP server for printing documents via CUPS on Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.9.1",
+    "pillow>=11.2.1",
+    "pycups>=2.0.4",
+    "python-magic>=0.4.27",
+]
+
+[project.scripts]
+cups-mcp = "main:main"
