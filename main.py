@@ -241,6 +241,12 @@ def update_printer_info(printer_name: str, description: Optional[str] = None, lo
 def print_text(content: str, printer: Optional[str] = None) -> str:
     """Print plain text content.
     
+    IMPORTANT printer selection logic for AI agents:
+    1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
+    2. If printing: Check if default printer exists. If not, ask which printer to use.
+    3. Remember the chosen printer for the rest of the session.
+    4. Only change printer if user explicitly requests a different one.
+    
     Args:
         content: Text content to print
         printer: Printer name (optional, uses default if not specified)
@@ -268,7 +274,26 @@ def print_text(content: str, printer: Optional[str] = None) -> str:
 if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
     def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
-        """Print markdown content (rendered to PDF via pandoc).
+        """Print markdown content (rendered to PDF via pandoc and XeLaTeX).
+        
+        IMPORTANT printer selection logic for AI agents:
+        1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
+        2. If printing: Check if default printer exists. If not, ask which printer to use.
+        3. Remember the chosen printer for the rest of the session.
+        4. Only change printer if user explicitly requests a different one.
+        
+        Supports:
+        - Standard markdown formatting (headers, bold, italic, lists, tables)
+        - Code blocks with syntax highlighting
+        - LaTeX math expressions (use $ for inline, $$ for display math)
+        - Latin scripts (including extended European characters)
+        - Greek and Cyrillic alphabets
+        - Basic symbols and punctuation
+        
+        Limited/No support for:
+        - Complex Unicode (emoji, box drawing, etc.)
+        - Right-to-left scripts (Arabic, Hebrew)
+        - CJK characters (Chinese, Japanese, Korean)
         
         Args:
             content: Markdown content to print
@@ -318,6 +343,10 @@ else:
     def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
         """Print markdown content (UNAVAILABLE - missing dependencies).
         
+        This tool requires pandoc, XeLaTeX, and LaTeX fonts to be installed.
+        Once installed, it will support standard markdown with good Latin/Greek/Cyrillic
+        text rendering, but limited support for complex Unicode, RTL scripts, and CJK.
+        
         Args:
             content: Markdown content to print
             printer: Printer name (optional, uses default if not specified)
@@ -334,9 +363,87 @@ else:
         return f"Markdown printing is not available. Missing dependencies:\n" + "\n".join(missing)
 
 
+# Register markdown_to_pdf if dependencies are available
+if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
+    @mcp.tool()
+    def markdown_to_pdf(content: str, output_path: str, title: str = "Document") -> str:
+        """Convert markdown content to PDF and save to specified path.
+        
+        This is useful for generating PDFs without printing them, or for systems
+        without a PDF printer configured.
+        
+        Supports:
+        - Standard markdown formatting (headers, lists, tables, code blocks)
+        - LaTeX math expressions (use $ for inline, $$ for display math)
+        - Latin scripts including European languages
+        - Greek and Cyrillic alphabets
+        
+        Args:
+            content: Markdown content to convert
+            output_path: Path where PDF should be saved (e.g., /home/user/document.pdf)
+            title: Document title (optional)
+        """
+        # Ensure output path ends with .pdf
+        if not output_path.endswith('.pdf'):
+            output_path += '.pdf'
+        
+        # Create temporary markdown file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write(content)
+            md_path = f.name
+        
+        try:
+            # Run pandoc
+            pandoc_cmd = [
+                "pandoc", md_path,
+                "-o", output_path,
+                "--metadata", f"title={title}",
+                "--pdf-engine=xelatex",
+                "-V", "geometry:margin=1in",
+                "-V", "mainfont=Noto Serif",
+                "-V", "sansfont=Noto Sans",
+                "-V", "monofont=Noto Sans Mono"
+            ]
+            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                return f"PDF conversion failed: {result.stderr}"
+            
+            return f"PDF saved successfully to: {output_path}"
+        finally:
+            Path(md_path).unlink(missing_ok=True)
+else:
+    @mcp.tool()
+    def markdown_to_pdf(content: str, output_path: str, title: str = "Document") -> str:
+        """Convert markdown to PDF (UNAVAILABLE - missing dependencies).
+        
+        This tool requires pandoc, XeLaTeX, and LaTeX fonts to be installed.
+        
+        Args:
+            content: Markdown content to convert
+            output_path: Path where PDF should be saved
+            title: Document title (optional)
+        """
+        missing = []
+        if not DEPENDENCIES["pandoc"]["available"]:
+            missing.append(DEPENDENCIES["pandoc"]["install_hint"])
+        if not DEPENDENCIES["xelatex"]["available"]:
+            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
+        if not DEPENDENCIES["latex_fonts"]["available"]:
+            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
+        
+        return f"Markdown to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
+
+
 @mcp.tool()
 def print_file(path: str, printer: Optional[str] = None) -> str:
     """Print a file from the filesystem.
+    
+    IMPORTANT printer selection logic for AI agents:
+    1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
+    2. If printing: Check if default printer exists. If not, ask which printer to use.
+    3. Remember the chosen printer for the rest of the session.
+    4. Only change printer if user explicitly requests a different one.
     
     Args:
         path: Path to the file to print

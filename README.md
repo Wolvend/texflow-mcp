@@ -4,11 +4,24 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
 
 ## Features
 
-- List available CUPS printers
+### Printing
+- List available CUPS printers with status information
 - Print plain text directly
 - Print Markdown documents (rendered to PDF via pandoc)
+- Convert Markdown to PDF without printing
 - Print files from the filesystem
 - Automatic file type detection
+
+### Printer Management
+- Get detailed printer information
+- Set default printer
+- Enable/disable printers
+- Update printer descriptions and locations
+
+### Smart Features
+- Dependency checking at startup
+- Conditional tool registration based on available dependencies
+- Clear feedback when dependencies are missing
 
 ## Prerequisites
 
@@ -90,13 +103,25 @@ Prints plain text content.
 ```
 
 #### `print_markdown`
-Prints Markdown content rendered as PDF.
+Prints Markdown content rendered as PDF via pandoc and XeLaTeX.
+
+**Supports:**
+- Standard markdown formatting (headers, lists, tables, code blocks)
+- LaTeX math expressions (inline with `$`, display with `$$`)
+- Latin scripts including European languages
+- Greek and Cyrillic alphabets
+- Basic symbols and punctuation
+
+**Limited support for:**
+- Complex Unicode (emoji, box drawing characters)
+- Right-to-left scripts (Arabic, Hebrew)
+- CJK characters (Chinese, Japanese, Korean)
 
 ```json
 {
   "name": "print_markdown",
   "arguments": {
-    "content": "# My Document\n\nThis is **bold** text.",
+    "content": "# My Document\n\nThis is **bold** text.\n\nMath: $E = mc^2$",
     "printer": "HP_LaserJet",  // optional
     "title": "My Document"     // optional
   }
@@ -115,6 +140,89 @@ Prints a file from the filesystem.
   }
 }
 ```
+
+#### `get_printer_info`
+Get detailed information about a specific printer including status, make/model, location, and URI.
+
+```json
+{
+  "name": "get_printer_info",
+  "arguments": {
+    "printer_name": "BrotherHL-L3295CDW"
+  }
+}
+```
+
+#### `set_default_printer`
+Change the default printer.
+
+```json
+{
+  "name": "set_default_printer",
+  "arguments": {
+    "printer_name": "CanonG3260"
+  }
+}
+```
+
+#### `enable_printer` / `disable_printer`
+Control printer availability for accepting jobs.
+
+```json
+{
+  "name": "enable_printer",
+  "arguments": {
+    "printer_name": "BrotherHL-L3295CDW"
+  }
+}
+```
+
+#### `update_printer_info`
+Update printer description and/or location.
+
+```json
+{
+  "name": "update_printer_info",
+  "arguments": {
+    "printer_name": "BrotherHL-L3295CDW",
+    "description": "Office Color Laser",
+    "location": "Room 201"
+  }
+}
+```
+
+#### `markdown_to_pdf`
+Convert markdown to PDF and save to a file (without printing).
+
+**Supports:**
+- Same markdown features as `print_markdown`
+- Saves PDF to specified path instead of printing
+
+```json
+{
+  "name": "markdown_to_pdf",
+  "arguments": {
+    "content": "# My Document\n\nSave this as PDF.",
+    "output_path": "/home/user/document.pdf",
+    "title": "My Document"
+  }
+}
+```
+
+### AI Agent Printer Selection Logic
+
+When using the printing tools, AI agents should follow this logic:
+
+1. **First print request:**
+   - If user doesn't specify, ask: "Would you like to print or save as PDF?"
+   - If printing and no default printer exists, ask which printer to use
+   - Remember the chosen printer for the session
+
+2. **Subsequent requests:**
+   - Use the remembered printer from the first request
+   - Only change if user explicitly specifies a different printer
+
+This ensures users aren't repeatedly asked about printer selection during a session.
 
 ## Claude Desktop Configuration
 
