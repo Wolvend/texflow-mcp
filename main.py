@@ -380,9 +380,21 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         
         Args:
             content: Markdown content to convert
-            output_path: Path where PDF should be saved (e.g., /home/user/document.pdf)
+            output_path: Path where PDF should be saved. Can be:
+                - Full path: /home/user/Documents/file.pdf
+                - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
+                - With ~: ~/Downloads/file.pdf
             title: Document title (optional)
         """
+        # Handle path expansion
+        output_path = str(Path(output_path).expanduser())
+        
+        # If no directory specified, default to Documents folder
+        if "/" not in output_path:
+            documents_dir = Path.home() / "Documents"
+            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
+            output_path = str(documents_dir / output_path)
+        
         # Ensure output path ends with .pdf
         if not output_path.endswith('.pdf'):
             output_path += '.pdf'
@@ -446,9 +458,12 @@ def print_file(path: str, printer: Optional[str] = None) -> str:
     4. Only change printer if user explicitly requests a different one.
     
     Args:
-        path: Path to the file to print
+        path: Path to the file to print (use ~ for home directory)
         printer: Printer name (optional, uses default if not specified)
     """
+    # Expand user home directory
+    path = str(Path(path).expanduser())
+    
     if not Path(path).exists():
         return f"File not found: {path}"
     

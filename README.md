@@ -203,13 +203,20 @@ Convert markdown to PDF and save to a file (without printing).
   "name": "markdown_to_pdf",
   "arguments": {
     "content": "# My Document\n\nSave this as PDF.",
-    "output_path": "/home/user/document.pdf",
+    "output_path": "report.pdf",  // Saves to ~/Documents/report.pdf by default
     "title": "My Document"
   }
 }
 ```
 
-### AI Agent Printer Selection Logic
+**Path handling:**
+- Simple filename (e.g., `report.pdf`) → Saves to `~/Documents/report.pdf`
+- Full path (e.g., `/home/user/Documents/report.pdf`) → Uses exact path
+- Path with `~` (e.g., `~/Downloads/report.pdf`) → Expands to home directory
+
+### AI Agent Guidelines
+
+#### Printer Selection Logic
 
 When using the printing tools, AI agents should follow this logic:
 
@@ -222,7 +229,14 @@ When using the printing tools, AI agents should follow this logic:
    - Use the remembered printer from the first request
    - Only change if user explicitly specifies a different printer
 
-This ensures users aren't repeatedly asked about printer selection during a session.
+#### File Paths
+
+When saving PDFs with `markdown_to_pdf`:
+- Use simple filenames (e.g., `report.pdf`) which save to `~/Documents/`
+- Don't assume the user's home directory path
+- Let the tool handle path expansion
+
+This ensures users aren't repeatedly asked about printer selection and files are saved to predictable locations.
 
 ## Claude Desktop Configuration
 
