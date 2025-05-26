@@ -363,6 +363,94 @@ else:
         return f"Markdown printing is not available. Missing dependencies:\n" + "\n".join(missing)
 
 
+# Register LaTeX printing if XeLaTeX is available
+if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
+    @mcp.tool()
+    def print_latex(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+        """Print LaTeX content (compiled to PDF via XeLaTeX).
+        
+        IMPORTANT printer selection logic for AI agents:
+        1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
+        2. If printing: Check if default printer exists. If not, ask which printer to use.
+        3. Remember the chosen printer for the rest of the session.
+        4. Only change printer if user explicitly requests a different one.
+        
+        Supports:
+        - Full LaTeX syntax and packages
+        - Mathematical formulas and equations
+        - TikZ diagrams and graphics
+        - Bibliography and citations
+        - Custom document classes
+        
+        Args:
+            content: LaTeX content to print
+            printer: Printer name (optional, uses default if not specified)
+            title: Document title (optional, used in jobname)
+        """
+        # Create temporary LaTeX file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
+            f.write(content)
+            tex_path = f.name
+        
+        # Output PDF path
+        pdf_path = tex_path.replace('.tex', '.pdf')
+        
+        try:
+            # Run XeLaTeX
+            xelatex_cmd = [
+                "xelatex",
+                "-interaction=nonstopmode",
+                f"-jobname={Path(tex_path).stem}",
+                "-output-directory", str(Path(tex_path).parent),
+                tex_path
+            ]
+            
+            # Run twice for references and TOC
+            for _ in range(2):
+                result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    # Extract error from log
+                    error_lines = result.stdout.split('\n')
+                    for i, line in enumerate(error_lines):
+                        if line.startswith('!'):
+                            error_msg = '\n'.join(error_lines[i:i+5])
+                            return f"LaTeX compilation failed:\n{error_msg}"
+                    return f"LaTeX compilation failed: {result.stderr}"
+            
+            # Print the PDF
+            cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                job_id = result.stdout.strip().split()[-1]
+                return f"Print job submitted: {job_id}"
+            else:
+                return f"Print failed: {result.stderr}"
+        finally:
+            # Clean up temporary files
+            for ext in ['.tex', '.pdf', '.aux', '.log']:
+                Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
+else:
+    @mcp.tool()
+    def print_latex(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+        """Print LaTeX content (UNAVAILABLE - missing dependencies).
+        
+        This tool requires XeLaTeX and LaTeX fonts to be installed.
+        
+        Args:
+            content: LaTeX content to print
+            printer: Printer name (optional, uses default if not specified)
+            title: Document title (optional)
+        """
+        missing = []
+        if not DEPENDENCIES["xelatex"]["available"]:
+            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
+        if not DEPENDENCIES["latex_fonts"]["available"]:
+            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
+        
+        return f"LaTeX printing is not available. Missing dependencies:\n" + "\n".join(missing)
+
+
 # Register markdown_to_pdf if dependencies are available
 if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
@@ -392,12 +480,25 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         # If no directory specified, default to Documents folder
         if "/" not in output_path:
             documents_dir = Path.home() / "Documents"
-            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
+            try:
+                documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
+            except Exception as e:
+                return f"Failed to create Documents directory: {str(e)}"
             output_path = str(documents_dir / output_path)
         
         # Ensure output path ends with .pdf
         if not output_path.endswith('.pdf'):
             output_path += '.pdf'
+        
+        # Check if file already exists
+        if Path(output_path).exists():
+            # Generate unique filename
+            base = Path(output_path).stem
+            dir_path = Path(output_path).parent
+            counter = 1
+            while Path(output_path).exists():
+                output_path = str(dir_path / f"{base}_{counter}.pdf")
+                counter += 1
         
         # Create temporary markdown file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
@@ -421,7 +522,15 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
             if result.returncode != 0:
                 return f"PDF conversion failed: {result.stderr}"
             
+            # Verify file was created
+            if not Path(output_path).exists():
+                return f"PDF generation failed - file was not created at {output_path}"
+            
             return f"PDF saved successfully to: {output_path}"
+        except PermissionError:
+            return f"Permission denied: Cannot write to {output_path}"
+        except Exception as e:
+            return f"Failed to save PDF: {str(e)}"
         finally:
             Path(md_path).unlink(missing_ok=True)
 else:
@@ -445,6 +554,212 @@ else:
             missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
         
         return f"Markdown to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
+
+
+@mcp.tool()
+def save_markdown(content: str, filename: str) -> str:
+    """Save markdown content to a file.
+    
+    Args:
+        content: Markdown content to save
+        filename: Filename to save. Can be:
+            - Simple name: document.md (saves to ~/Documents/document.md)
+            - Full path: /home/user/Documents/document.md
+            - With ~: ~/Downloads/document.md
+    """
+    # Handle path expansion
+    output_path = str(Path(filename).expanduser())
+    
+    # If no directory specified, default to Documents folder
+    if "/" not in output_path:
+        documents_dir = Path.home() / "Documents"
+        try:
+            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
+        except Exception as e:
+            return f"Failed to create Documents directory: {str(e)}"
+        output_path = str(documents_dir / output_path)
+    
+    # Ensure output path ends with .md
+    if not output_path.endswith('.md'):
+        output_path += '.md'
+    
+    # Check if file already exists
+    if Path(output_path).exists():
+        # Generate unique filename
+        base = Path(output_path).stem
+        dir_path = Path(output_path).parent
+        counter = 1
+        while Path(output_path).exists():
+            output_path = str(dir_path / f"{base}_{counter}.md")
+            counter += 1
+    
+    try:
+        # Write the markdown file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return f"Markdown saved successfully to: {output_path}"
+    except PermissionError:
+        return f"Permission denied: Cannot write to {output_path}"
+    except Exception as e:
+        return f"Failed to save markdown: {str(e)}"
+
+
+@mcp.tool()
+def save_latex(content: str, filename: str) -> str:
+    """Save LaTeX content to a .tex file.
+    
+    Args:
+        content: LaTeX content to save
+        filename: Filename to save. Can be:
+            - Simple name: document.tex (saves to ~/Documents/document.tex)
+            - Full path: /home/user/Documents/document.tex
+            - With ~: ~/Downloads/document.tex
+    """
+    # Handle path expansion
+    output_path = str(Path(filename).expanduser())
+    
+    # If no directory specified, default to Documents folder
+    if "/" not in output_path:
+        documents_dir = Path.home() / "Documents"
+        try:
+            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
+        except Exception as e:
+            return f"Failed to create Documents directory: {str(e)}"
+        output_path = str(documents_dir / output_path)
+    
+    # Ensure output path ends with .tex
+    if not output_path.endswith('.tex'):
+        output_path += '.tex'
+    
+    # Check if file already exists
+    if Path(output_path).exists():
+        # Generate unique filename
+        base = Path(output_path).stem
+        dir_path = Path(output_path).parent
+        counter = 1
+        while Path(output_path).exists():
+            output_path = str(dir_path / f"{base}_{counter}.tex")
+            counter += 1
+    
+    try:
+        # Write the LaTeX file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return f"LaTeX saved successfully to: {output_path}"
+    except PermissionError:
+        return f"Permission denied: Cannot write to {output_path}"
+    except Exception as e:
+        return f"Failed to save LaTeX: {str(e)}"
+
+
+@mcp.tool()
+def list_documents(folder: str = "") -> str:
+    """List PDF and Markdown files in Documents folder or subfolder.
+    
+    Args:
+        folder: Subfolder within Documents (optional, e.g., "reports" for ~/Documents/reports)
+    """
+    documents_dir = Path.home() / "Documents"
+    if folder:
+        documents_dir = documents_dir / folder
+    
+    if not documents_dir.exists():
+        return f"Directory not found: {documents_dir}"
+    
+    try:
+        # Find PDF, MD, and TEX files
+        pdf_files = list(documents_dir.glob("*.pdf"))
+        md_files = list(documents_dir.glob("*.md"))
+        tex_files = list(documents_dir.glob("*.tex"))
+        
+        if not pdf_files and not md_files and not tex_files:
+            return f"No PDF, Markdown, or LaTeX files found in {documents_dir}"
+        
+        result = f"Files in {documents_dir}:\n\n"
+        
+        if pdf_files:
+            result += "PDF files:\n"
+            for f in sorted(pdf_files):
+                size = f.stat().st_size / 1024  # KB
+                result += f"  - {f.name} ({size:.1f} KB)\n"
+        
+        if md_files:
+            result += "\nMarkdown files:\n"
+            for f in sorted(md_files):
+                size = f.stat().st_size / 1024  # KB
+                result += f"  - {f.name} ({size:.1f} KB)\n"
+        
+        if tex_files:
+            result += "\nLaTeX files:\n"
+            for f in sorted(tex_files):
+                size = f.stat().st_size / 1024  # KB
+                result += f"  - {f.name} ({size:.1f} KB)\n"
+        
+        return result
+    except PermissionError:
+        return f"Permission denied accessing {documents_dir}"
+    except Exception as e:
+        return f"Error listing documents: {str(e)}"
+
+
+@mcp.tool()
+def print_from_documents(filename: str, printer: Optional[str] = None, folder: str = "") -> str:
+    """Print a PDF or Markdown file from Documents folder.
+    
+    IMPORTANT printer selection logic for AI agents:
+    1. First print: Check if default printer exists. If not, ask which printer to use.
+    2. Remember the chosen printer for the rest of the session.
+    3. Only change printer if user explicitly requests a different one.
+    
+    Args:
+        filename: Name of file to print (e.g., "report.pdf" or "notes.md")
+        printer: Printer name (optional, uses default if not specified)
+        folder: Subfolder within Documents (optional, e.g., "reports")
+    """
+    documents_dir = Path.home() / "Documents"
+    if folder:
+        documents_dir = documents_dir / folder
+    
+    file_path = documents_dir / filename
+    
+    if not file_path.exists():
+        # Try with common extensions if not provided
+        if not file_path.suffix:
+            for ext in ['.pdf', '.md', '.tex']:
+                test_path = documents_dir / f"{filename}{ext}"
+                if test_path.exists():
+                    file_path = test_path
+                    break
+    
+    if not file_path.exists():
+        return f"File not found: {file_path}"
+    
+    # If it's a markdown file, convert to PDF first
+    if file_path.suffix.lower() == '.md':
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Use our existing markdown printing logic
+            return print_markdown(content, printer, title=file_path.stem)
+        except Exception as e:
+            return f"Failed to read markdown file: {str(e)}"
+    
+    # If it's a LaTeX file, compile and print
+    if file_path.suffix.lower() == '.tex':
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Use our existing LaTeX printing logic
+            return print_latex(content, printer, title=file_path.stem)
+        except Exception as e:
+            return f"Failed to read LaTeX file: {str(e)}"
+    
+    # For PDFs and other files, use regular print_file
+    return print_file(str(file_path), printer)
 
 
 @mcp.tool()

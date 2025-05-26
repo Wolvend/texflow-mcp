@@ -8,9 +8,16 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
 - List available CUPS printers with status information
 - Print plain text directly
 - Print Markdown documents (rendered to PDF via pandoc)
-- Convert Markdown to PDF without printing
 - Print files from the filesystem
 - Automatic file type detection
+
+### Document Creation & Saving
+- Convert Markdown to PDF without printing
+- Save Markdown content to .md files
+- Save LaTeX content to .tex files
+- Print LaTeX documents with full XeLaTeX compilation
+- Smart path handling with Documents folder default
+- Automatic file renaming to avoid overwrites
 
 ### Printer Management
 - Get detailed printer information
@@ -148,7 +155,7 @@ Get detailed information about a specific printer including status, make/model, 
 {
   "name": "get_printer_info",
   "arguments": {
-    "printer_name": "BrotherHL-L3295CDW"
+    "printer_name": "My_Printer"
   }
 }
 ```
@@ -172,7 +179,7 @@ Control printer availability for accepting jobs.
 {
   "name": "enable_printer",
   "arguments": {
-    "printer_name": "BrotherHL-L3295CDW"
+    "printer_name": "My_Printer"
   }
 }
 ```
@@ -184,7 +191,7 @@ Update printer description and/or location.
 {
   "name": "update_printer_info",
   "arguments": {
-    "printer_name": "BrotherHL-L3295CDW",
+    "printer_name": "My_Printer",
     "description": "Office Color Laser",
     "location": "Room 201"
   }
@@ -209,10 +216,93 @@ Convert markdown to PDF and save to a file (without printing).
 }
 ```
 
-**Path handling:**
-- Simple filename (e.g., `report.pdf`) → Saves to `~/Documents/report.pdf`
+#### `print_latex`
+Print LaTeX content (compiled to PDF via XeLaTeX).
+
+**Supports:**
+- Full LaTeX syntax and packages
+- Mathematical formulas and equations
+- TikZ diagrams and graphics
+- Bibliography and citations
+- Custom document classes
+
+```json
+{
+  "name": "print_latex",
+  "arguments": {
+    "content": "\\documentclass{article}\n\\begin{document}\nHello LaTeX!\n\\end{document}",
+    "printer": "My_Printer",  // optional
+    "title": "My LaTeX Doc"  // optional
+  }
+}
+```
+
+#### `save_markdown`
+Save markdown content to a .md file.
+
+```json
+{
+  "name": "save_markdown",
+  "arguments": {
+    "content": "# My Document\n\nThis is my markdown content.",
+    "filename": "notes.md"  // Saves to ~/Documents/notes.md by default
+  }
+}
+```
+
+#### `save_latex`
+Save LaTeX content to a .tex file.
+
+```json
+{
+  "name": "save_latex",
+  "arguments": {
+    "content": "\\documentclass{article}\n\\begin{document}\nHello LaTeX!\n\\end{document}",
+    "filename": "document.tex"  // Saves to ~/Documents/document.tex by default
+  }
+}
+```
+
+#### `list_documents`
+List PDF and Markdown files in the Documents folder.
+
+```json
+{
+  "name": "list_documents",
+  "arguments": {
+    "folder": "reports"  // Optional: list files in ~/Documents/reports
+  }
+}
+```
+
+#### `print_from_documents`
+Print a PDF or Markdown file from the Documents folder.
+
+```json
+{
+  "name": "print_from_documents",
+  "arguments": {
+    "filename": "report.pdf",     // or just "report" - will find .pdf or .md
+    "printer": "My_Printer",  // optional
+    "folder": "reports"           // optional subfolder
+  }
+}
+```
+
+**Features:**
+- Automatically finds .pdf or .md extension if not specified
+- Converts Markdown files to PDF before printing
+- Works with subfolders in Documents
+
+**Path handling for save tools:**
+- Simple filename (e.g., `report.pdf`) → Saves to `~/Documents/`
 - Full path (e.g., `/home/user/Documents/report.pdf`) → Uses exact path
 - Path with `~` (e.g., `~/Downloads/report.pdf`) → Expands to home directory
+
+**Automatic features:**
+- Creates Documents directory if it doesn't exist
+- Generates unique filename if file already exists (adds _1, _2, etc.)
+- Returns clear error messages for permission issues or other failures
 
 ### AI Agent Guidelines
 
