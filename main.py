@@ -3,6 +3,7 @@
 
 import subprocess
 import tempfile
+import shutil
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -12,8 +13,40 @@ import cups
 import magic
 
 
+# Check for system dependencies
+def check_command(cmd: str) -> bool:
+    """Check if a command is available in PATH."""
+    return shutil.which(cmd) is not None
+
+
+# Dependency checks
+DEPENDENCIES = {
+    "pandoc": {
+        "available": check_command("pandoc"),
+        "description": "pandoc (for markdown to PDF conversion)",
+        "install_hint": "Install with: apt install pandoc, dnf install pandoc, or pacman -S pandoc"
+    },
+    "xelatex": {
+        "available": check_command("xelatex") or check_command("pdflatex"),
+        "description": "LaTeX (for PDF generation from pandoc)",
+        "install_hint": "Install with: apt install texlive-xetex, dnf install texlive-xetex, or pacman -S texlive-core"
+    }
+}
+
 # Initialize FastMCP server  
 mcp = FastMCP("cups-mcp")
+
+# Log dependency status at startup
+missing_deps = []
+for dep, info in DEPENDENCIES.items():
+    if not info["available"]:
+        missing_deps.append(f"- {info['description']}: {info['install_hint']}")
+
+if missing_deps:
+    print(f"Warning: Some optional dependencies are missing:")
+    for dep in missing_deps:
+        print(dep)
+    print("Some features may be unavailable.")
 
 
 def get_available_printers() -> List[Dict[str, Any]]:
@@ -211,49 +244,69 @@ def print_text(content: str, printer: Optional[str] = None) -> str:
         Path(temp_path).unlink()
 
 
-@mcp.tool()
-def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
-    """Print markdown content (rendered to PDF via pandoc).
-    
-    Args:
-        content: Markdown content to print
-        printer: Printer name (optional, uses default if not specified)
-        title: Document title (optional)
-    """
-    # Create temporary markdown file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-        f.write(content)
-        md_path = f.name
-    
-    # Convert to PDF using pandoc
-    pdf_path = md_path.replace('.md', '.pdf')
-    
-    try:
-        # Run pandoc
-        pandoc_cmd = [
-            "pandoc", md_path,
-            "-o", pdf_path,
-            "--metadata", f"title={title}",
-            "--pdf-engine=xelatex",
-            "-V", "geometry:margin=1in"
-        ]
-        result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
+# Only register print_markdown if pandoc is available
+if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"]:
+    @mcp.tool()
+    def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+        """Print markdown content (rendered to PDF via pandoc).
         
-        if result.returncode != 0:
-            return f"Pandoc conversion failed: {result.stderr}"
+        Args:
+            content: Markdown content to print
+            printer: Printer name (optional, uses default if not specified)
+            title: Document title (optional)
+        """
+        # Create temporary markdown file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write(content)
+            md_path = f.name
         
-        # Print the PDF
-        cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Convert to PDF using pandoc
+        pdf_path = md_path.replace('.md', '.pdf')
         
-        if result.returncode == 0:
-            job_id = result.stdout.strip().split()[-1]
-            return f"Print job submitted: {job_id}"
-        else:
-            return f"Print failed: {result.stderr}"
-    finally:
-        Path(md_path).unlink(missing_ok=True)
-        Path(pdf_path).unlink(missing_ok=True)
+        try:
+            # Run pandoc
+            pandoc_cmd = [
+                "pandoc", md_path,
+                "-o", pdf_path,
+                "--metadata", f"title={title}",
+                "--pdf-engine=xelatex",
+                "-V", "geometry:margin=1in"
+            ]
+            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                return f"Pandoc conversion failed: {result.stderr}"
+            
+            # Print the PDF
+            cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                job_id = result.stdout.strip().split()[-1]
+                return f"Print job submitted: {job_id}"
+            else:
+                return f"Print failed: {result.stderr}"
+        finally:
+            Path(md_path).unlink(missing_ok=True)
+            Path(pdf_path).unlink(missing_ok=True)
+else:
+    # Create a placeholder function that explains what's missing
+    @mcp.tool()
+    def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+        """Print markdown content (UNAVAILABLE - missing dependencies).
+        
+        Args:
+            content: Markdown content to print
+            printer: Printer name (optional, uses default if not specified)
+            title: Document title (optional)
+        """
+        missing = []
+        if not DEPENDENCIES["pandoc"]["available"]:
+            missing.append(DEPENDENCIES["pandoc"]["install_hint"])
+        if not DEPENDENCIES["xelatex"]["available"]:
+            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
+        
+        return f"Markdown printing is not available. Missing dependencies:\n" + "\n".join(missing)
 
 
 @mcp.tool()
