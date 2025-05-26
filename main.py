@@ -5,6 +5,8 @@ import os
 import subprocess
 import tempfile
 import shutil
+import hashlib
+import difflib
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -1155,6 +1157,121 @@ def print_file(path: str, printer: Optional[str] = None) -> str:
             return f"Print failed: {result.stderr}"
 
 
+import time
+import hashlib
+from datetime import datetime
+
+# Store file metadata for change detection
+file_metadata = {}
+
+@mcp.tool()
+def check_document_status(file_path: str) -> str:
+    """Check if a document has been modified externally and show changes.
+    
+    Tracks document modification times and content hashes to detect external changes.
+    If changes are detected, shows a diff of what changed.
+    
+    Args:
+        file_path: Path to document to check
+    
+    Returns:
+        Status report including modification info and diff if changed
+    """
+    # Handle path expansion
+    path = Path(file_path).expanduser()
+    
+    # If no directory specified, default to Documents folder
+    if not path.is_absolute() and "/" not in str(file_path):
+        path = Path.home() / "Documents" / file_path
+    elif not path.is_absolute():
+        # Relative path within Documents
+        path = Path.home() / "Documents" / file_path
+    
+    if not path.exists():
+        return f"File not found: {path}"
+    
+    try:
+        # Get current file stats
+        stat = os.stat(path)
+        current_mtime = stat.st_mtime
+        current_size = stat.st_size
+        
+        # Read current content for hash
+        with open(path, 'r', encoding='utf-8') as f:
+            current_content = f.read()
+        current_hash = hashlib.sha256(current_content.encode()).hexdigest()
+        
+        # Check if we have previous metadata
+        path_str = str(path)
+        if path_str in file_metadata:
+            prev_meta = file_metadata[path_str]
+            prev_mtime = prev_meta['mtime']
+            prev_hash = prev_meta['hash']
+            prev_content = prev_meta.get('content', '')
+            
+            if current_hash != prev_hash:
+                # File has changed - generate diff
+                import difflib
+                
+                prev_lines = prev_content.splitlines(keepends=True)
+                curr_lines = current_content.splitlines(keepends=True)
+                
+                diff = difflib.unified_diff(
+                    prev_lines,
+                    curr_lines,
+                    fromfile=f"{path.name} (previous)",
+                    tofile=f"{path.name} (current)",
+                    fromfiledate=datetime.fromtimestamp(prev_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                    tofiledate=datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                    n=3
+                )
+                
+                diff_text = ''.join(diff)
+                
+                # Update metadata
+                file_metadata[path_str] = {
+                    'mtime': current_mtime,
+                    'size': current_size,
+                    'hash': current_hash,
+                    'content': current_content
+                }
+                
+                return f"""File has been modified externally!
+
+Last checked: {datetime.fromtimestamp(prev_mtime).strftime('%Y-%m-%d %H:%M:%S')}
+Current time: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
+Size change: {prev_meta['size']} → {current_size} bytes
+
+Changes detected:
+{diff_text}"""
+            else:
+                return f"""No changes detected.
+                
+File: {path}
+Last modified: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
+Size: {current_size} bytes
+Status: Unchanged since last check"""
+        else:
+            # First time checking this file
+            file_metadata[path_str] = {
+                'mtime': current_mtime,
+                'size': current_size,
+                'hash': current_hash,
+                'content': current_content
+            }
+            
+            return f"""Now tracking document for changes.
+            
+File: {path}
+Modified: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
+Size: {current_size} bytes
+Hash: {current_hash[:16]}...
+Status: Initial tracking started"""
+            
+    except Exception as e:
+        return f"Error checking document status: {str(e)}"
+
+
 @mcp.tool()
 def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
     """Read a document file with line numbers for editing.
@@ -1206,6 +1323,16 @@ def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
         if not result:
             return f"No content in range (lines {offset}-{offset+limit-1})"
         
+        # Update tracking metadata when reading
+        stat = os.stat(path)
+        path_str = str(path)
+        file_metadata[path_str] = {
+            'mtime': stat.st_mtime,
+            'size': stat.st_size,
+            'hash': hashlib.sha256(''.join(lines).encode()).hexdigest(),
+            'content': ''.join(lines)
+        }
+        
         return '\n'.join(result)
         
     except PermissionError:
@@ -1220,6 +1347,12 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
     
     Similar to the system Edit tool but specifically for documents.
     Performs exact string replacement with occurrence validation.
+    
+    This tool supports collaborative editing by detecting external changes:
+    - Checks if the file has been modified since last read
+    - Shows a diff of external changes if detected
+    - Prevents accidental overwrites of user edits
+    - Updates tracking metadata after successful edits
     
     Args:
         file_path: Path to document. Can be:
@@ -1251,6 +1384,39 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
         return f"File not found: {path}"
     
     try:
+        # Check for external changes first
+        path_str = str(path)
+        if path_str in file_metadata:
+            stat = os.stat(path)
+            stored_meta = file_metadata[path_str]
+            
+            # Check if file was modified externally
+            if stat.st_mtime > stored_meta['mtime'] or stat.st_size != stored_meta['size']:
+                # Read current content
+                with open(path, 'r', encoding='utf-8') as f:
+                    current_content = f.read()
+                
+                # Check if content actually changed
+                current_hash = hashlib.sha256(current_content.encode()).hexdigest()
+                if current_hash != stored_meta['hash']:
+                    # Generate diff
+                    stored_lines = stored_meta['content'].splitlines(keepends=True)
+                    current_lines = current_content.splitlines(keepends=True)
+                    
+                    diff = list(difflib.unified_diff(
+                        stored_lines,
+                        current_lines,
+                        fromfile=f"{path} (last read)",
+                        tofile=f"{path} (current)",
+                        n=3
+                    ))
+                    
+                    diff_text = ''.join(diff) if diff else "No line-by-line differences found"
+                    
+                    return (f"Error: File has been modified externally since last read!\n\n"
+                           f"External changes detected:\n{diff_text}\n\n"
+                           f"Please use read_document to get the latest version before editing.")
+        
         # Read the file
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -1270,6 +1436,15 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
         # Write back
         with open(path, 'w', encoding='utf-8') as f:
             f.write(new_content)
+        
+        # Update tracking metadata after successful edit
+        stat = os.stat(path)
+        file_metadata[path_str] = {
+            'mtime': stat.st_mtime,
+            'size': stat.st_size,
+            'hash': hashlib.sha256(new_content.encode()).hexdigest(),
+            'content': new_content
+        }
         
         # Return success with context
         # Find first replacement location for context

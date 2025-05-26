@@ -2,9 +2,20 @@
 
 ![CUPS MCP Server](cups.png)
 
-A standalone MCP (Model Context Protocol) server that provides complete document creation, editing, and printing capabilities via CUPS on Linux systems. 
+A standalone MCP (Model Context Protocol) server that provides complete document creation, editing, and printing capabilities via CUPS on Linux systems.
 
-**Key Value**: This server enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities - no Claude Code or other specific tools required. Your AI can read, edit, create, validate, and print documents just like a desktop application.
+## 🚀 Key Innovation: Collaborative Document Editing
+
+This server introduces **collaborative editing capabilities** that prevent conflicts when multiple agents (human or AI) work on the same documents:
+
+- **Change Detection**: Automatically detects when documents are modified externally
+- **Diff Visualization**: Shows unified diffs of what changed between edits
+- **Conflict Prevention**: Refuses to overwrite external changes, protecting everyone's work
+- **AI-to-AI Collaboration**: Enables multiple AI agents to work together on documents without conflicts
+
+## Core Value Proposition
+
+This server enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities - no specific tools required. Your AI can read, edit, create, validate, and print documents just like a desktop application.
 
 ## Features
 
@@ -29,11 +40,14 @@ A standalone MCP (Model Context Protocol) server that provides complete document
 - Enable/disable printers
 - Update printer descriptions and locations
 
-### Document Editing (NEW!)
+### Collaborative Document Editing 🤝
 - Read documents with line numbers for precise editing
 - Make targeted edits with string replacement and validation
-- Works with any document type in the Documents folder
-- Provides same editing experience as dedicated code editors
+- **Track external changes** with modification time and content hashing
+- **Show diffs** when documents are edited outside the AI session
+- **Prevent conflicts** between multiple editors (human or AI)
+- Check document status to see what changed since last read
+- Enable safe concurrent editing workflows
 
 ### Smart Features
 - Dependency checking at startup
@@ -415,6 +429,28 @@ Edit a document file by replacing exact string matches.
 - Returns context snippet showing changes
 - Prevents accidental replacements with count validation
 - Same smart path handling as read_document
+- **Collaborative editing support:** Detects external file changes and shows diffs
+- Prevents overwrites when user has edited file externally
+- Automatically tracks file modifications for safe concurrent editing
+
+#### `check_document_status`
+Check if a document has been modified externally and show changes.
+
+```json
+{
+  "name": "check_document_status",
+  "arguments": {
+    "file_path": "proposal.tex"  // or full path
+  }
+}
+```
+
+**Features:**
+- Tracks document modification times and content hashes
+- Detects external changes made by users or other programs
+- Shows unified diff of what changed since last read
+- Helps coordinate collaborative editing between AI and users
+- Essential for preventing conflicting edits in shared documents
 
 **Path handling for save tools:**
 - Simple filename (e.g., `report.pdf`) → Saves to `~/Documents/`
@@ -464,6 +500,47 @@ Add to your Claude Desktop config:
   }
 }
 ```
+
+## AI-to-AI Collaboration 🤖🤝🤖
+
+The collaborative editing features enable fascinating multi-agent workflows:
+
+### Use Cases
+- **Parallel Document Development**: Multiple AI agents can work on different sections simultaneously
+- **Review Workflows**: One AI drafts, another reviews and edits
+- **Specialized Collaboration**: Domain-specific AIs (e.g., technical writer + code reviewer) working together
+- **Iterative Refinement**: AIs can build upon each other's contributions with full visibility
+
+### How It Works
+1. **Agent A** reads and edits a document, establishing a baseline
+2. **Agent B** detects Agent A's changes through the diff system
+3. **Agent B** reviews the changes before making its own contributions
+4. Each agent maintains awareness of others' modifications through the tracking system
+
+### Example Workflow
+```bash
+# Agent 1 (Technical Writer AI)
+- Creates initial documentation structure
+- Writes API reference sections
+
+# Agent 2 (Code Examples AI)  
+- Detects Agent 1's additions
+- Adds code examples to each API section
+- Preserves Agent 1's documentation
+
+# Agent 3 (Review AI)
+- Sees combined work from both agents
+- Fixes inconsistencies
+- Adds cross-references
+```
+
+This opens up entirely new possibilities for AI collaboration on complex documentation and content creation tasks.
+
+## Documentation
+
+- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 19 tools
+- 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
+- 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
 
 ## Future Enhancements
 
