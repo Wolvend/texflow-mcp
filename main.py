@@ -656,7 +656,11 @@ def save_latex(content: str, filename: str) -> str:
 
 @mcp.tool()
 def list_documents(folder: str = "") -> str:
-    """List PDF and Markdown files in Documents folder or subfolder.
+    """List all printable files in Documents folder or subfolder.
+    
+    IMPORTANT for AI agents: Use this tool to find files when the user provides
+    partial or approximate filenames. This tool shows ALL file types including
+    PDF, Markdown, LaTeX, HTML, SVG, images, and other documents.
     
     Args:
         folder: Subfolder within Documents (optional, e.g., "reports" for ~/Documents/reports)
@@ -669,35 +673,46 @@ def list_documents(folder: str = "") -> str:
         return f"Directory not found: {documents_dir}"
     
     try:
-        # Find PDF, MD, and TEX files
-        pdf_files = list(documents_dir.glob("*.pdf"))
-        md_files = list(documents_dir.glob("*.md"))
-        tex_files = list(documents_dir.glob("*.tex"))
+        # Define file types to list
+        file_patterns = {
+            "PDF files": "*.pdf",
+            "Markdown files": "*.md", 
+            "LaTeX files": "*.tex",
+            "HTML files": "*.html",
+            "SVG files": "*.svg",
+            "Image files": ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp"],
+            "Text files": "*.txt",
+            "Other documents": ["*.doc", "*.docx", "*.odt", "*.rtf"]
+        }
         
-        if not pdf_files and not md_files and not tex_files:
-            return f"No PDF, Markdown, or LaTeX files found in {documents_dir}"
+        all_files = {}
+        
+        # Collect files by type
+        for file_type, patterns in file_patterns.items():
+            if isinstance(patterns, str):
+                patterns = [patterns]
+            
+            files = []
+            for pattern in patterns:
+                files.extend(documents_dir.glob(pattern))
+            
+            if files:
+                all_files[file_type] = sorted(files)
+        
+        if not all_files:
+            return f"No document files found in {documents_dir}"
         
         result = f"Files in {documents_dir}:\n\n"
         
-        if pdf_files:
-            result += "PDF files:\n"
-            for f in sorted(pdf_files):
+        # Display files by type
+        for file_type, files in all_files.items():
+            result += f"{file_type}:\n"
+            for f in files:
                 size = f.stat().st_size / 1024  # KB
                 result += f"  - {f.name} ({size:.1f} KB)\n"
+            result += "\n"
         
-        if md_files:
-            result += "\nMarkdown files:\n"
-            for f in sorted(md_files):
-                size = f.stat().st_size / 1024  # KB
-                result += f"  - {f.name} ({size:.1f} KB)\n"
-        
-        if tex_files:
-            result += "\nLaTeX files:\n"
-            for f in sorted(tex_files):
-                size = f.stat().st_size / 1024  # KB
-                result += f"  - {f.name} ({size:.1f} KB)\n"
-        
-        return result
+        return result.rstrip()
     except PermissionError:
         return f"Permission denied accessing {documents_dir}"
     except Exception as e:

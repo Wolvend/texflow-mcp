@@ -41,35 +41,66 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
   - Debian/Ubuntu: `apt install pandoc`
   - Fedora: `dnf install pandoc`
   - Arch: `pacman -S pandoc`
-- `xelatex` - For PDF generation from pandoc (requires XeLaTeX and fonts)
+- **LaTeX/XeLaTeX** - For PDF generation from markdown and LaTeX documents
+  
+  **Core Requirements:**
+  - XeLaTeX engine for PDF compilation
+  - Latin Modern fonts for proper text rendering
+  - Standard LaTeX packages for document formatting
+  
+  **Installation by Distribution:**
+  
   - **Debian/Ubuntu**: 
     ```bash
+    # Essential packages
     apt install texlive-xetex texlive-fonts-recommended texlive-latex-recommended
+    
+    # For TikZ diagrams and graphics (if needed)
+    apt install texlive-pictures
     ```
+  
   - **Fedora**: 
     ```bash
+    # Essential packages
     dnf install texlive-xetex texlive-collection-fontsrecommended
+    
+    # For TikZ diagrams and graphics (if needed)
+    dnf install texlive-collection-pictures
     ```
+  
   - **Arch**: 
     ```bash
+    # Essential packages
     pacman -S texlive-xetex texlive-fontsrecommended
+    
+    # For TikZ diagrams and graphics (if needed)
+    pacman -S texlive-pictures
     ```
-  - Note: Basic texlive packages alone are not sufficient. You need:
-    - XeLaTeX format files (`texlive-xetex`)
-    - Latin Modern and other standard fonts (`texlive-fonts-recommended` or equivalent)
-    - LaTeX packages for pandoc (`texlive-latex-recommended` on Debian/Ubuntu)
+  
+  **What Each Package Provides:**
+  - `texlive-xetex`: XeLaTeX engine and fontspec package
+  - `texlive-fonts-recommended`: Latin Modern, Computer Modern, and other standard fonts
+  - `texlive-latex-recommended`: Essential LaTeX packages (geometry, etc.)
+  - `texlive-pictures`: TikZ package for creating diagrams and graphics
 
 The server will check for these dependencies at startup and only enable features that have their requirements met. Missing dependencies will be reported with installation instructions.
 
 ## Installation
 
 ```bash
-# Install system dependencies
-sudo apt-get install cups pandoc texlive-xetex  # Debian/Ubuntu
-# or
-sudo dnf install cups pandoc texlive-xetex      # Fedora
-# or
-sudo pacman -S cups pandoc texlive-xetex        # Arch
+# Install system dependencies (choose your distribution)
+
+# Debian/Ubuntu - Full installation with all features
+sudo apt-get install cups pandoc texlive-xetex texlive-fonts-recommended \
+                     texlive-latex-recommended texlive-pictures
+
+# Fedora - Full installation with all features  
+sudo dnf install cups pandoc texlive-xetex texlive-collection-fontsrecommended \
+                 texlive-collection-pictures
+
+# Arch - Full installation with all features
+sudo pacman -S cups pandoc texlive-xetex texlive-fontsrecommended \
+               texlive-pictures
 
 # Clone and install
 git clone https://github.com/yourusername/cups-mcp
