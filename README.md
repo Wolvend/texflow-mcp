@@ -1,6 +1,8 @@
 # CUPS MCP Server
 
-An MCP (Model Context Protocol) server that enables printing documents via CUPS on Linux systems.
+A standalone MCP (Model Context Protocol) server that provides complete document creation, editing, and printing capabilities via CUPS on Linux systems. 
+
+**Key Value**: This server enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities - no Claude Code or other specific tools required. Your AI can read, edit, create, validate, and print documents just like a desktop application.
 
 ## Features
 
@@ -25,10 +27,17 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
 - Enable/disable printers
 - Update printer descriptions and locations
 
+### Document Editing (NEW!)
+- Read documents with line numbers for precise editing
+- Make targeted edits with string replacement and validation
+- Works with any document type in the Documents folder
+- Provides same editing experience as dedicated code editors
+
 ### Smart Features
 - Dependency checking at startup
 - Conditional tool registration based on available dependencies
 - Clear feedback when dependencies are missing
+- Automatic file type detection and appropriate handling
 
 ## Prerequisites
 
@@ -41,6 +50,14 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
   - Debian/Ubuntu: `apt install pandoc`
   - Fedora: `dnf install pandoc`
   - Arch: `pacman -S pandoc`
+- `weasyprint` - For HTML to PDF conversion
+  - Debian/Ubuntu: `apt install weasyprint`
+  - Fedora: `dnf install weasyprint`
+  - Arch: `pacman -S python-weasyprint`
+- `rsvg-convert` - For SVG to PDF conversion
+  - Debian/Ubuntu: `apt install librsvg2-bin`
+  - Fedora: `dnf install librsvg2-tools`
+  - Arch: `pacman -S librsvg`
 - **LaTeX/XeLaTeX** - For PDF generation from markdown and LaTeX documents
   
   **Core Requirements:**
@@ -57,6 +74,9 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
     
     # For TikZ diagrams and graphics (if needed)
     apt install texlive-pictures
+    
+    # For LaTeX validation (chktex)
+    apt install chktex
     ```
   
   - **Fedora**: 
@@ -66,6 +86,9 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
     
     # For TikZ diagrams and graphics (if needed)
     dnf install texlive-collection-pictures
+    
+    # For LaTeX validation (chktex)
+    dnf install texlive-chktex
     ```
   
   - **Arch**: 
@@ -75,6 +98,9 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
     
     # For TikZ diagrams and graphics (if needed)
     pacman -S texlive-pictures
+    
+    # For LaTeX validation (chktex)
+    pacman -S texlive-binextra
     ```
   
   **What Each Package Provides:**
@@ -82,6 +108,7 @@ An MCP (Model Context Protocol) server that enables printing documents via CUPS 
   - `texlive-fonts-recommended`: Latin Modern, Computer Modern, and other standard fonts
   - `texlive-latex-recommended`: Essential LaTeX packages (geometry, etc.)
   - `texlive-pictures`: TikZ package for creating diagrams and graphics
+  - `chktex`/`texlive-binextra`: LaTeX validation tools for checking syntax
 
 The server will check for these dependencies at startup and only enable features that have their requirements met. Missing dependencies will be reported with installation instructions.
 
@@ -92,18 +119,21 @@ The server will check for these dependencies at startup and only enable features
 
 # Debian/Ubuntu - Full installation with all features
 sudo apt-get install cups pandoc texlive-xetex texlive-fonts-recommended \
-                     texlive-latex-recommended texlive-pictures
+                     texlive-latex-recommended texlive-pictures chktex \
+                     weasyprint librsvg2-bin
 
 # Fedora - Full installation with all features  
 sudo dnf install cups pandoc texlive-xetex texlive-collection-fontsrecommended \
-                 texlive-collection-pictures
+                 texlive-collection-pictures texlive-chktex \
+                 weasyprint librsvg2-tools
 
 # Arch - Full installation with all features
 sudo pacman -S cups pandoc texlive-xetex texlive-fontsrecommended \
-               texlive-pictures
+               texlive-pictures texlive-binextra \
+               python-weasyprint librsvg
 
 # Clone and install
-git clone https://github.com/yourusername/cups-mcp
+git clone https://github.com/aaronsb/cups-mcp
 cd cups-mcp
 uv sync
 ```
@@ -324,6 +354,65 @@ Print a PDF or Markdown file from the Documents folder.
 - Automatically finds .pdf or .md extension if not specified
 - Converts Markdown files to PDF before printing
 - Works with subfolders in Documents
+
+#### `validate_latex`
+Validate LaTeX content for syntax errors before compilation.
+
+```json
+{
+  "name": "validate_latex",
+  "arguments": {
+    "content": "\\documentclass{article}\n\\begin{document}\nHello!\n\\end{document}"
+  }
+}
+```
+
+**Features:**
+- Uses `lacheck` and `chktex` for syntax checking (if available)
+- Performs test compilation with XeLaTeX
+- Returns detailed error reports and warnings
+- Helps catch errors before printing
+
+#### `read_document`
+Read a document file with line numbers for editing.
+
+```json
+{
+  "name": "read_document",
+  "arguments": {
+    "file_path": "proposal.tex",  // or full path
+    "offset": 1,                  // starting line (optional, default: 1)
+    "limit": 50                   // number of lines (optional, default: 50)
+  }
+}
+```
+
+**Features:**
+- Returns content with line numbers in `cat -n` format
+- Works with any text file in Documents folder
+- Smart path handling (defaults to ~/Documents/)
+- Supports reading portions of large files
+
+#### `edit_document`
+Edit a document file by replacing exact string matches.
+
+```json
+{
+  "name": "edit_document",
+  "arguments": {
+    "file_path": "proposal.tex",
+    "old_string": "Hello World",
+    "new_string": "Hello CUPS MCP",
+    "expected_replacements": 1    // optional, default: 1
+  }
+}
+```
+
+**Features:**
+- Exact string replacement with occurrence validation
+- Returns context snippet showing changes
+- Prevents accidental replacements with count validation
+- Same smart path handling as read_document
 
 **Path handling for save tools:**
 - Simple filename (e.g., `report.pdf`) → Saves to `~/Documents/`

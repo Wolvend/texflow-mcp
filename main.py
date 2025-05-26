@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CUPS MCP Server - Print documents via CUPS on Linux."""
 
+import os
 import subprocess
 import tempfile
 import shutil
@@ -11,6 +12,96 @@ from mcp.server.fastmcp import FastMCP
 
 import cups
 import magic
+
+
+def detect_distro() -> str:
+    """Detect the Linux distribution."""
+    # Try to read /etc/os-release first (standard for most modern distros)
+    if os.path.exists('/etc/os-release'):
+        with open('/etc/os-release', 'r') as f:
+            content = f.read().lower()
+            if 'arch' in content:
+                return 'arch'
+            elif 'debian' in content or 'ubuntu' in content:
+                return 'debian'
+            elif 'fedora' in content or 'rhel' in content or 'centos' in content:
+                return 'redhat'
+    
+    # Fallback checks
+    if os.path.exists('/etc/arch-release'):
+        return 'arch'
+    elif os.path.exists('/etc/debian_version'):
+        return 'debian'
+    elif os.path.exists('/etc/redhat-release'):
+        return 'redhat'
+    
+    return 'unknown'
+
+
+def check_arch_package(package: str) -> bool:
+    """Check if a package is installed on Arch Linux using pacman."""
+    try:
+        result = subprocess.run(
+            ["pacman", "-Qi", package],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
+def check_debian_package(package: str) -> bool:
+    """Check if a package is installed on Debian/Ubuntu using dpkg."""
+    try:
+        result = subprocess.run(
+            ["dpkg", "-l", package],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        if result.returncode == 0:
+            # Check if package is actually installed (ii status)
+            for line in result.stdout.split('\n'):
+                if line.startswith('ii') and package in line:
+                    return True
+        return False
+    except:
+        return False
+
+
+def check_redhat_package(package: str) -> bool:
+    """Check if a package is installed on Fedora/RHEL using rpm."""
+    try:
+        result = subprocess.run(
+            ["rpm", "-q", package],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
+def check_package_installed(packages: dict) -> bool:
+    """Check if a package is installed based on the distribution.
+    
+    Args:
+        packages: Dict mapping distro names to package names
+    Returns:
+        True if package is installed, False otherwise
+    """
+    distro = detect_distro()
+    
+    if distro == 'arch' and 'arch' in packages:
+        return check_arch_package(packages['arch'])
+    elif distro == 'debian' and 'debian' in packages:
+        return check_debian_package(packages['debian'])
+    elif distro == 'redhat' and 'redhat' in packages:
+        return check_redhat_package(packages['redhat'])
+    
+    # Fallback to command check if distro detection fails
+    return False
 
 
 # Check for system dependencies
@@ -34,29 +125,95 @@ def check_latex_fonts() -> bool:
         return False
 
 
+# Detect distribution for better dependency checking
+DISTRO = detect_distro()
+
+# Package mappings for different distributions
+PACKAGE_MAPPINGS = {
+    "pandoc": {
+        "arch": "pandoc-cli",  # On Arch, pandoc-cli provides pandoc
+        "debian": "pandoc",
+        "redhat": "pandoc"
+    },
+    "xelatex": {
+        "arch": "texlive-bin",  # XeLaTeX is in texlive-bin on Arch
+        "debian": "texlive-xetex",
+        "redhat": "texlive-xetex"
+    },
+    "latex_fonts": {
+        "arch": "texlive-fontsrecommended",
+        "debian": "texlive-fonts-recommended",
+        "redhat": "texlive-collection-fontsrecommended"
+    },
+    "weasyprint": {
+        "arch": "python-weasyprint",
+        "debian": "weasyprint",
+        "redhat": "weasyprint"
+    },
+    "rsvg": {
+        "arch": "librsvg",
+        "debian": "librsvg2-bin",
+        "redhat": "librsvg2-tools"
+    },
+    "tikz": {
+        "arch": "texlive-pictures",
+        "debian": "texlive-pictures",
+        "redhat": "texlive-collection-pictures"
+    }
+}
+
+def get_install_command(packages: dict) -> str:
+    """Get the install command for the current distribution."""
+    if DISTRO == 'arch':
+        return f"sudo pacman -S {packages.get('arch', 'PACKAGE_NAME')}"
+    elif DISTRO == 'debian':
+        return f"sudo apt install {packages.get('debian', 'PACKAGE_NAME')}"
+    elif DISTRO == 'redhat':
+        return f"sudo dnf install {packages.get('redhat', 'PACKAGE_NAME')}"
+    else:
+        # Fallback to showing all options
+        return f"Install with: apt install {packages.get('debian', 'PACKAGE')}, dnf install {packages.get('redhat', 'PACKAGE')}, or pacman -S {packages.get('arch', 'PACKAGE')}"
+
 # Dependency checks
 DEPENDENCIES = {
     "pandoc": {
-        "available": check_command("pandoc"),
+        "available": check_package_installed(PACKAGE_MAPPINGS["pandoc"]) or check_command("pandoc"),
         "description": "pandoc (for markdown to PDF conversion)",
-        "install_hint": "Install with: apt install pandoc, dnf install pandoc, or pacman -S pandoc"
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["pandoc"])
     },
     "xelatex": {
-        "available": check_command("xelatex"),
+        "available": check_package_installed(PACKAGE_MAPPINGS["xelatex"]) or check_command("xelatex"),
         "description": "XeLaTeX (for PDF generation from pandoc)",
-        "install_hint": "Install with: apt install texlive-xetex, dnf install texlive-xetex, or pacman -S texlive-xetex"
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["xelatex"])
     },
     "latex_fonts": {
-        "available": check_latex_fonts(),
+        "available": check_package_installed(PACKAGE_MAPPINGS["latex_fonts"]) or check_latex_fonts(),
         "description": "LaTeX fonts (Latin Modern, etc.)",
-        "install_hint": "Install with: apt install texlive-fonts-recommended, dnf install texlive-collection-fontsrecommended, or pacman -S texlive-fontsrecommended"
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["latex_fonts"])
+    },
+    "weasyprint": {
+        "available": check_package_installed(PACKAGE_MAPPINGS["weasyprint"]) or check_command("weasyprint"),
+        "description": "WeasyPrint (for HTML to PDF conversion)",
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["weasyprint"])
+    },
+    "rsvg-convert": {
+        "available": check_package_installed(PACKAGE_MAPPINGS["rsvg"]) or check_command("rsvg-convert"),
+        "description": "rsvg-convert (for SVG to PDF conversion)",
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["rsvg"])
+    },
+    "tikz": {
+        "available": check_package_installed(PACKAGE_MAPPINGS["tikz"]),
+        "description": "TikZ package (for LaTeX diagrams and graphics)",
+        "install_hint": get_install_command(PACKAGE_MAPPINGS["tikz"])
     }
 }
 
 # Initialize FastMCP server  
 mcp = FastMCP("cups-mcp")
 
-# Log dependency status at startup
+# Log distribution detection and dependency status at startup
+print(f"Detected Linux distribution: {DISTRO}")
+
 missing_deps = []
 for dep, info in DEPENDENCIES.items():
     if not info["available"]:
@@ -606,6 +763,115 @@ def save_markdown(content: str, filename: str) -> str:
 
 
 @mcp.tool()
+def validate_latex(content: str) -> str:
+    """Validate LaTeX content for syntax errors before compilation.
+    
+    Uses lacheck and chktex (if available) and attempts a test compilation
+    to identify issues before actually printing or saving.
+    
+    Args:
+        content: LaTeX content to validate
+    
+    Returns:
+        Validation report with any errors or warnings found
+    """
+    # Create temporary LaTeX file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
+        f.write(content)
+        tex_path = f.name
+    
+    try:
+        report = []
+        
+        # Run lacheck if available
+        if check_command("lacheck"):
+            result = subprocess.run(
+                ["lacheck", tex_path],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout:
+                report.append("=== LaCheck Warnings ===")
+                report.append(result.stdout.strip())
+        
+        # Run chktex if available (more comprehensive)
+        if check_command("chktex"):
+            result = subprocess.run(
+                ["chktex", "-q", "-n", "all", tex_path],
+                capture_output=True,
+                text=True
+            )
+            if result.stdout:
+                report.append("\n=== ChkTeX Analysis ===")
+                report.append(result.stdout.strip())
+        
+        # Try a quick compilation to catch more errors
+        if DEPENDENCIES["xelatex"]["available"]:
+            report.append("\n=== Compilation Test ===")
+            # Run with batchmode to suppress output but catch errors
+            result = subprocess.run(
+                ["xelatex", "-interaction=batchmode", "-halt-on-error", tex_path],
+                capture_output=True,
+                text=True,
+                cwd=os.path.dirname(tex_path)
+            )
+            
+            if result.returncode != 0:
+                # Read the log file for errors
+                log_path = tex_path.replace('.tex', '.log')
+                if os.path.exists(log_path):
+                    with open(log_path, 'r') as log:
+                        log_content = log.read()
+                        # Extract error messages
+                        errors = []
+                        in_error = False
+                        for line in log_content.split('\n'):
+                            if line.startswith('!'):
+                                in_error = True
+                                errors.append(line)
+                            elif in_error and (line.startswith('l.') or line.strip() == ''):
+                                errors.append(line)
+                                if line.strip() == '':
+                                    in_error = False
+                            elif 'Error:' in line or 'error:' in line:
+                                errors.append(line)
+                        
+                        if errors:
+                            report.append("Compilation FAILED with errors:")
+                            report.extend(errors[:20])  # First 20 error lines
+                            if len(errors) > 20:
+                                report.append(f"... and {len(errors)-20} more error lines")
+                
+                # Clean up auxiliary files
+                for ext in ['.aux', '.log', '.out']:
+                    aux_file = tex_path.replace('.tex', ext)
+                    if os.path.exists(aux_file):
+                        os.unlink(aux_file)
+            else:
+                report.append("✓ Compilation successful! Document is valid.")
+                # Clean up PDF and auxiliary files
+                for ext in ['.pdf', '.aux', '.log', '.out']:
+                    aux_file = tex_path.replace('.tex', ext)
+                    if os.path.exists(aux_file):
+                        os.unlink(aux_file)
+        else:
+            report.append("\n⚠ XeLaTeX not available for compilation test.")
+        
+        # Clean up temp file
+        os.unlink(tex_path)
+        
+        if not report:
+            return "✓ LaTeX validation passed - no issues found!"
+        
+        return "\n".join(report)
+        
+    except Exception as e:
+        if os.path.exists(tex_path):
+            os.unlink(tex_path)
+        return f"Validation error: {str(e)}"
+
+
+@mcp.tool()
 def save_latex(content: str, filename: str) -> str:
     """Save LaTeX content to a .tex file.
     
@@ -799,16 +1065,225 @@ def print_file(path: str, printer: Optional[str] = None) -> str:
     
     # Detect file type
     mime = magic.from_file(path, mime=True)
+    file_ext = Path(path).suffix.lower()
     
-    # For now, let CUPS handle it directly
-    cmd = ["lp", "-d", printer, path] if printer else ["lp", path]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Handle HTML files
+    if mime == "text/html" or file_ext == ".html":
+        if DEPENDENCIES["weasyprint"]["available"]:
+            # Convert HTML to PDF first
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+                pdf_path = tmp_pdf.name
+            
+            try:
+                # Use weasyprint to convert HTML to PDF
+                result = subprocess.run(
+                    ["weasyprint", path, pdf_path],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode != 0:
+                    return f"HTML to PDF conversion failed: {result.stderr}"
+                
+                # Print the PDF
+                cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Clean up
+                os.unlink(pdf_path)
+                
+                if result.returncode == 0:
+                    job_id = result.stdout.strip().split()[-1]
+                    return f"Print job submitted: {job_id} (HTML rendered to PDF)"
+                else:
+                    return f"Print failed: {result.stderr}"
+                    
+            except Exception as e:
+                if os.path.exists(pdf_path):
+                    os.unlink(pdf_path)
+                return f"Failed to convert HTML: {str(e)}"
+        else:
+            return f"HTML printing requires WeasyPrint. {DEPENDENCIES['weasyprint']['install_hint']}"
     
-    if result.returncode == 0:
-        job_id = result.stdout.strip().split()[-1]
-        return f"Print job submitted: {job_id} (type: {mime})"
+    # Handle SVG files
+    elif mime == "image/svg+xml" or file_ext == ".svg":
+        if DEPENDENCIES["rsvg-convert"]["available"]:
+            # Convert SVG to PDF first
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
+                pdf_path = tmp_pdf.name
+            
+            try:
+                # Use rsvg-convert to convert SVG to PDF
+                result = subprocess.run(
+                    ["rsvg-convert", "-f", "pdf", "-o", pdf_path, path],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode != 0:
+                    return f"SVG to PDF conversion failed: {result.stderr}"
+                
+                # Print the PDF
+                cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                # Clean up
+                os.unlink(pdf_path)
+                
+                if result.returncode == 0:
+                    job_id = result.stdout.strip().split()[-1]
+                    return f"Print job submitted: {job_id} (SVG rendered to PDF)"
+                else:
+                    return f"Print failed: {result.stderr}"
+                    
+            except Exception as e:
+                if os.path.exists(pdf_path):
+                    os.unlink(pdf_path)
+                return f"Failed to convert SVG: {str(e)}"
+        else:
+            return f"SVG printing requires rsvg-convert. {DEPENDENCIES['rsvg-convert']['install_hint']}"
+    
+    # For other files, let CUPS handle it directly
     else:
-        return f"Print failed: {result.stderr}"
+        cmd = ["lp", "-d", printer, path] if printer else ["lp", path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            job_id = result.stdout.strip().split()[-1]
+            return f"Print job submitted: {job_id} (type: {mime})"
+        else:
+            return f"Print failed: {result.stderr}"
+
+
+@mcp.tool()
+def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
+    """Read a document file with line numbers for editing.
+    
+    Similar to the system Read tool but specifically for documents.
+    Returns content in 'cat -n' format with line numbers.
+    
+    Args:
+        file_path: Path to document. Can be:
+            - Simple name: document.tex (reads from ~/Documents/)
+            - Full path: /home/user/Documents/file.tex
+            - Relative to Documents: subfolder/file.tex
+        offset: Starting line number (default: 1)
+        limit: Number of lines to read (default: 50)
+    
+    Returns:
+        File content with line numbers in format: "   123[TAB]content"
+    """
+    # Handle path expansion
+    path = Path(file_path).expanduser()
+    
+    # If no directory specified, default to Documents folder
+    if not path.is_absolute() and "/" not in str(file_path):
+        path = Path.home() / "Documents" / file_path
+    elif not path.is_absolute():
+        # Relative path within Documents
+        path = Path.home() / "Documents" / file_path
+    
+    if not path.exists():
+        return f"File not found: {path}"
+    
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Apply offset and limit
+        start = max(0, offset - 1)  # Convert to 0-based index
+        end = min(len(lines), start + limit)
+        
+        # Format with line numbers
+        result = []
+        for i in range(start, end):
+            # Format: right-aligned line number + tab + content
+            line_num = i + 1
+            # Remove newline for display, it will be in the content already
+            content = lines[i].rstrip('\n')
+            result.append(f"{line_num:6d}\t{content}")
+        
+        if not result:
+            return f"No content in range (lines {offset}-{offset+limit-1})"
+        
+        return '\n'.join(result)
+        
+    except PermissionError:
+        return f"Permission denied: Cannot read {path}"
+    except Exception as e:
+        return f"Failed to read document: {str(e)}"
+
+
+@mcp.tool()
+def edit_document(file_path: str, old_string: str, new_string: str, expected_replacements: int = 1) -> str:
+    """Edit a document file by replacing exact string matches.
+    
+    Similar to the system Edit tool but specifically for documents.
+    Performs exact string replacement with occurrence validation.
+    
+    Args:
+        file_path: Path to document. Can be:
+            - Simple name: document.tex (edits in ~/Documents/)
+            - Full path: /home/user/Documents/file.tex
+            - Relative to Documents: subfolder/file.tex
+        old_string: Exact string to find and replace
+        new_string: String to replace with
+        expected_replacements: Expected number of replacements (default: 1)
+    
+    Returns:
+        Success message with snippet of changes, or error description
+    """
+    # Validate inputs
+    if old_string == new_string:
+        return "Error: old_string and new_string are the same"
+    
+    # Handle path expansion
+    path = Path(file_path).expanduser()
+    
+    # If no directory specified, default to Documents folder
+    if not path.is_absolute() and "/" not in str(file_path):
+        path = Path.home() / "Documents" / file_path
+    elif not path.is_absolute():
+        # Relative path within Documents
+        path = Path.home() / "Documents" / file_path
+    
+    if not path.exists():
+        return f"File not found: {path}"
+    
+    try:
+        # Read the file
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Count occurrences
+        count = content.count(old_string)
+        
+        if count == 0:
+            return f"String not found in file: {repr(old_string)}"
+        
+        if count != expected_replacements:
+            return f"Expected {expected_replacements} replacement(s), but found {count} occurrence(s)"
+        
+        # Perform replacement
+        new_content = content.replace(old_string, new_string)
+        
+        # Write back
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        # Return success with context
+        # Find first replacement location for context
+        pos = content.find(old_string)
+        start = max(0, pos - 50)
+        end = min(len(new_content), pos + len(new_string) + 50)
+        snippet = new_content[start:end]
+        
+        return f"Successfully replaced {count} occurrence(s) in {path}\nContext: ...{snippet}..."
+        
+    except PermissionError:
+        return f"Permission denied: Cannot write to {path}"
+    except Exception as e:
+        return f"Failed to edit document: {str(e)}"
 
 
 # This is needed for FastMCP to find the server
