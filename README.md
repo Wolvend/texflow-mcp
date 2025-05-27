@@ -159,7 +159,11 @@ uv sync
 ### Running the server
 
 ```bash
+# From within the repository
 uv run cups-mcp
+
+# Or run directly from GitHub (no clone needed!)
+uvx --from git+https://github.com/aaronsb/cups-mcp.git cups-mcp
 ```
 
 ### Available Tools

@@ -432,7 +432,7 @@ def print_text(content: str, printer: Optional[str] = None) -> str:
 # Only register print_markdown if all dependencies are available
 if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
-    def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+    def print_markdown(content: Optional[str] = None, file_path: Optional[str] = None, printer: Optional[str] = None, title: str = "Document") -> str:
         """Print markdown content (rendered to PDF via pandoc and XeLaTeX).
         
         IMPORTANT printer selection logic for AI agents:
@@ -455,14 +455,46 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         - CJK characters (Chinese, Japanese, Korean)
         
         Args:
-            content: Markdown content to print
+            content: Markdown content to print (optional if file_path is provided)
+            file_path: Path to Markdown file to print (optional if content is provided)
             printer: Printer name (optional, uses default if not specified)
             title: Document title (optional)
         """
-        # Create temporary markdown file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-            f.write(content)
-            md_path = f.name
+        # Validate input
+        if not content and not file_path:
+            return "Error: Either content or file_path must be provided"
+        
+        if content and file_path:
+            return "Error: Provide either content or file_path, not both"
+        
+        # Handle file_path input
+        if file_path:
+            # Expand path
+            path = Path(file_path).expanduser()
+            
+            # If no directory specified, check Documents folder
+            if not path.is_absolute() and "/" not in str(file_path):
+                path = Path.home() / "Documents" / file_path
+            elif not path.is_absolute():
+                # Relative path within Documents
+                path = Path.home() / "Documents" / file_path
+            
+            if not path.exists():
+                return f"File not found: {path}"
+            
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                md_path = str(path)
+                temp_file = False
+            except Exception as e:
+                return f"Failed to read file: {str(e)}"
+        else:
+            # Create temporary markdown file from content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+                f.write(content)
+                md_path = f.name
+            temp_file = True
         
         # Convert to PDF using pandoc
         pdf_path = md_path.replace('.md', '.pdf')
@@ -494,8 +526,13 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
             else:
                 return f"Print failed: {result.stderr}"
         finally:
-            Path(md_path).unlink(missing_ok=True)
-            Path(pdf_path).unlink(missing_ok=True)
+            # Clean up temporary files only if we created them
+            if temp_file:
+                Path(md_path).unlink(missing_ok=True)
+                Path(pdf_path).unlink(missing_ok=True)
+            else:
+                # For user files, don't delete the source, only the generated PDF
+                Path(pdf_path).unlink(missing_ok=True)
 else:
     # Create a placeholder function that explains what's missing
     @mcp.tool()
@@ -525,7 +562,7 @@ else:
 # Register LaTeX printing if XeLaTeX is available
 if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
-    def print_latex(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
+    def print_latex(content: Optional[str] = None, file_path: Optional[str] = None, printer: Optional[str] = None, title: str = "Document") -> str:
         """Print LaTeX content (compiled to PDF via XeLaTeX).
         
         IMPORTANT printer selection logic for AI agents:
@@ -542,14 +579,46 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         - Custom document classes
         
         Args:
-            content: LaTeX content to print
+            content: LaTeX content to print (optional if file_path is provided)
+            file_path: Path to LaTeX file to print (optional if content is provided)
             printer: Printer name (optional, uses default if not specified)
             title: Document title (optional, used in jobname)
         """
-        # Create temporary LaTeX file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
-            f.write(content)
-            tex_path = f.name
+        # Validate input
+        if not content and not file_path:
+            return "Error: Either content or file_path must be provided"
+        
+        if content and file_path:
+            return "Error: Provide either content or file_path, not both"
+        
+        # Handle file_path input
+        if file_path:
+            # Expand path
+            path = Path(file_path).expanduser()
+            
+            # If no directory specified, check Documents folder
+            if not path.is_absolute() and "/" not in str(file_path):
+                path = Path.home() / "Documents" / file_path
+            elif not path.is_absolute():
+                # Relative path within Documents
+                path = Path.home() / "Documents" / file_path
+            
+            if not path.exists():
+                return f"File not found: {path}"
+            
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                tex_path = str(path)
+                temp_file = False
+            except Exception as e:
+                return f"Failed to read file: {str(e)}"
+        else:
+            # Create temporary LaTeX file from content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
+                f.write(content)
+                tex_path = f.name
+            temp_file = True
         
         # Output PDF path
         pdf_path = tex_path.replace('.tex', '.pdf')
@@ -586,9 +655,14 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
             else:
                 return f"Print failed: {result.stderr}"
         finally:
-            # Clean up temporary files
-            for ext in ['.tex', '.pdf', '.aux', '.log']:
-                Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
+            # Clean up temporary files only if we created them
+            if temp_file:
+                for ext in ['.tex', '.pdf', '.aux', '.log']:
+                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
+            else:
+                # For user files, only clean up auxiliary files
+                for ext in ['.aux', '.log']:
+                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
 else:
     @mcp.tool()
     def print_latex(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
@@ -613,7 +687,7 @@ else:
 # Register markdown_to_pdf if dependencies are available
 if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
     @mcp.tool()
-    def markdown_to_pdf(content: str, output_path: str, title: str = "Document") -> str:
+    def markdown_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
         """Convert markdown content to PDF and save to specified path.
         
         This is useful for generating PDFs without printing them, or for systems
@@ -626,14 +700,46 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         - Greek and Cyrillic alphabets
         
         Args:
-            content: Markdown content to convert
+            content: Markdown content to convert (optional if file_path is provided)
+            file_path: Path to Markdown file to convert (optional if content is provided)
             output_path: Path where PDF should be saved. Can be:
                 - Full path: /home/user/Documents/file.pdf
                 - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
                 - With ~: ~/Downloads/file.pdf
             title: Document title (optional)
         """
-        # Handle path expansion
+        # Validate input
+        if not content and not file_path:
+            return "Error: Either content or file_path must be provided"
+        
+        if content and file_path:
+            return "Error: Provide either content or file_path, not both"
+        
+        if not output_path:
+            return "Error: output_path is required"
+        
+        # Handle file_path input
+        if file_path:
+            # Expand path
+            path = Path(file_path).expanduser()
+            
+            # If no directory specified, check Documents folder
+            if not path.is_absolute() and "/" not in str(file_path):
+                path = Path.home() / "Documents" / file_path
+            elif not path.is_absolute():
+                # Relative path within Documents
+                path = Path.home() / "Documents" / file_path
+            
+            if not path.exists():
+                return f"File not found: {path}"
+            
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except Exception as e:
+                return f"Failed to read file: {str(e)}"
+        
+        # Handle output path expansion
         output_path = str(Path(output_path).expanduser())
         
         # If no directory specified, default to Documents folder
@@ -920,6 +1026,145 @@ def save_latex(content: str, filename: str) -> str:
         return f"Permission denied: Cannot write to {output_path}"
     except Exception as e:
         return f"Failed to save LaTeX: {str(e)}"
+
+
+# Register latex_to_pdf if XeLaTeX is available
+if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
+    @mcp.tool()
+    def latex_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
+        """Convert LaTeX content to PDF and save to specified path.
+        
+        This is useful for generating PDFs without printing them.
+        
+        Args:
+            content: LaTeX content to convert (optional if file_path is provided)
+            file_path: Path to LaTeX file to convert (optional if content is provided)
+            output_path: Path where PDF should be saved. Can be:
+                - Full path: /home/user/Documents/file.pdf
+                - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
+                - With ~: ~/Downloads/file.pdf
+            title: Document title (optional, used in jobname)
+        """
+        # Validate input
+        if not content and not file_path:
+            return "Error: Either content or file_path must be provided"
+        
+        if content and file_path:
+            return "Error: Provide either content or file_path, not both"
+        
+        if not output_path:
+            return "Error: output_path is required"
+        
+        # Handle file_path input
+        if file_path:
+            # Expand path
+            path = Path(file_path).expanduser()
+            
+            # If no directory specified, check Documents folder
+            if not path.is_absolute() and "/" not in str(file_path):
+                path = Path.home() / "Documents" / file_path
+            elif not path.is_absolute():
+                # Relative path within Documents
+                path = Path.home() / "Documents" / file_path
+            
+            if not path.exists():
+                return f"File not found: {path}"
+            
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                tex_path = str(path)
+                temp_file = False
+            except Exception as e:
+                return f"Failed to read file: {str(e)}"
+        else:
+            # Create temporary LaTeX file from content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
+                f.write(content)
+                tex_path = f.name
+            temp_file = True
+        
+        # Handle output path expansion
+        output_path = str(Path(output_path).expanduser())
+        
+        # If no directory specified, default to Documents folder
+        if "/" not in output_path:
+            documents_dir = Path.home() / "Documents"
+            try:
+                documents_dir.mkdir(exist_ok=True)
+            except Exception as e:
+                return f"Failed to create Documents directory: {str(e)}"
+            output_path = str(documents_dir / output_path)
+        
+        # Ensure output path ends with .pdf
+        if not output_path.endswith('.pdf'):
+            output_path += '.pdf'
+        
+        # Check if file already exists
+        if Path(output_path).exists():
+            # Generate unique filename
+            base = Path(output_path).stem
+            dir_path = Path(output_path).parent
+            counter = 1
+            while Path(output_path).exists():
+                output_path = str(dir_path / f"{base}_{counter}.pdf")
+                counter += 1
+        
+        try:
+            # Run XeLaTeX
+            xelatex_cmd = [
+                "xelatex",
+                "-interaction=nonstopmode",
+                f"-jobname={Path(tex_path).stem}",
+                "-output-directory", str(Path(tex_path).parent),
+                tex_path
+            ]
+            
+            # Run twice for references and TOC
+            for _ in range(2):
+                result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    # Extract error from log
+                    error_lines = result.stdout.split('\n')
+                    for i, line in enumerate(error_lines):
+                        if line.startswith('!'):
+                            error_msg = '\n'.join(error_lines[i:i+5])
+                            return f"LaTeX compilation failed:\n{error_msg}"
+                    return f"LaTeX compilation failed: {result.stderr}"
+            
+            # Move the generated PDF to the desired location
+            generated_pdf = tex_path.replace('.tex', '.pdf')
+            shutil.move(generated_pdf, output_path)
+            
+            return f"PDF saved successfully to: {output_path}"
+            
+        except PermissionError:
+            return f"Permission denied: Cannot write to {output_path}"
+        except Exception as e:
+            return f"Failed to save PDF: {str(e)}"
+        finally:
+            # Clean up temporary files only if we created them
+            if temp_file:
+                for ext in ['.tex', '.aux', '.log']:
+                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
+            else:
+                # For user files, only clean up auxiliary files
+                for ext in ['.aux', '.log']:
+                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
+else:
+    @mcp.tool()
+    def latex_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
+        """Convert LaTeX to PDF (UNAVAILABLE - missing dependencies).
+        
+        This tool requires XeLaTeX and LaTeX fonts to be installed.
+        """
+        missing = []
+        if not DEPENDENCIES["xelatex"]["available"]:
+            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
+        if not DEPENDENCIES["latex_fonts"]["available"]:
+            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
+        
+        return f"LaTeX to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
 
 
 @mcp.tool()
