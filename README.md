@@ -154,17 +154,32 @@ cd cups-mcp
 uv sync
 ```
 
-## Usage
+## Quick Start
 
-### Running the server
+### Option 1: Run directly from GitHub (Recommended)
+
+No installation needed! Just ensure you have `uv` installed and run:
 
 ```bash
-# From within the repository
-uv run cups-mcp
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Or run directly from GitHub (no clone needed!)
+# Run CUPS MCP directly from GitHub
 uvx --from git+https://github.com/aaronsb/cups-mcp.git cups-mcp
 ```
+
+### Option 2: Clone and run locally
+
+```bash
+# Clone the repository
+git clone https://github.com/aaronsb/cups-mcp
+cd cups-mcp
+
+# Run the server
+uv run cups-mcp
+```
+
+## Usage
 
 ### Available Tools
 
@@ -492,7 +507,30 @@ This ensures users aren't repeatedly asked about printer selection and files are
 
 ## Claude Desktop Configuration
 
+### Method 1: Run from GitHub (Recommended)
+
 Add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "cups-mcp": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/aaronsb/cups-mcp.git", "cups-mcp"]
+    }
+  }
+}
+```
+
+Or use the Claude CLI:
+
+```bash
+claude mcp add cups-mcp uvx -- --from git+https://github.com/aaronsb/cups-mcp.git cups-mcp
+```
+
+### Method 2: Run from local directory
+
+If you've cloned the repository:
 
 ```json
 {
