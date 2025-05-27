@@ -12,4 +12,4 @@ dependencies = [
 ]
 
 [project.scripts]
-cups-mcp = "main:main"
+cups-mcp = "cups_mcp:main"
