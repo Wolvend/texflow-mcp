@@ -1708,3 +1708,13 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
 
 # This is needed for FastMCP to find the server
 server = mcp
+
+def main():
+    """Main entry point for the cups-mcp server."""
+    import asyncio
+    from mcp.server.stdio import stdio_server
+    
+    asyncio.run(stdio_server(server).run())
+
+if __name__ == "__main__":
+    main()
