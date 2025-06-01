@@ -181,6 +181,30 @@ uv run cups-mcp
 
 ## Usage
 
+### Quick Start - Essential Tools
+
+For most document workflows, you'll primarily use these tools:
+
+#### Basic Printing
+- `print_text` - Print plain text directly
+- `print_file` - Print any file (PDF, images, etc.)
+- `list_printers` - See available printers
+
+#### Document Creation & Publishing  
+- `save_latex` - Create LaTeX documents (research papers, reports)
+- `save_markdown` - Create Markdown documents (notes, documentation)
+- `latex_to_pdf` - Convert LaTeX to PDF
+- `print_latex` - Compile and print LaTeX documents
+
+#### Document Editing
+- `read_document` - Read files with line numbers
+- `edit_document` - Make precise edits to documents
+
+#### Font Discovery (New!)
+- `list_available_fonts` - Find fonts for your LaTeX documents
+
+See the birthday whitepaper example in `examples/` for a demonstration of advanced LaTeX capabilities including mathematical proofs, TikZ diagrams, and academic formatting.
+
 ### Available Tools
 
 #### `list_printers`
