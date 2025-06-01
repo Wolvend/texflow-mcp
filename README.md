@@ -390,6 +390,25 @@ Print a PDF or Markdown file from the Documents folder.
 - Converts Markdown files to PDF before printing
 - Works with subfolders in Documents
 
+#### `list_available_fonts`
+List fonts available for use with XeLaTeX documents.
+
+```json
+{
+  "name": "list_available_fonts",
+  "arguments": {
+    "style": "serif"  // Optional: filter by 'serif', 'sans', 'mono', or None for all
+  }
+}
+```
+
+**Features:**
+- Lists all system fonts compatible with XeLaTeX
+- Filter by font style (serif, sans-serif, monospace)
+- Groups fonts alphabetically for easy browsing
+- Provides usage examples for LaTeX documents
+- Shows popular font recommendations
+
 #### `validate_latex`
 Validate LaTeX content for syntax errors before compilation.
 
@@ -578,9 +597,51 @@ The collaborative editing features enable fascinating multi-agent workflows:
 
 This opens up entirely new possibilities for AI collaboration on complex documentation and content creation tasks.
 
+## Examples
+
+### LaTeX Capabilities Showcase
+
+The `examples/` directory contains a demonstration of the server's advanced LaTeX capabilities:
+
+- **`birthday_whitepaper.tex`** - A humorous academic paper showcasing:
+  - Complex mathematical equations and proofs
+  - TikZ diagrams with electrical circuits
+  - Multi-column layouts
+  - Custom theorem environments
+  - Bibliography and citations
+  - Professional academic formatting
+
+- **`birthday_whitepaper_unified_theory.pdf`** - The compiled PDF showing the final output
+
+These examples demonstrate the server's ability to handle sophisticated LaTeX documents with:
+- Mathematical typesetting
+- Technical diagrams
+- Academic paper formatting
+- Cross-references and citations
+- Custom LaTeX packages
+
+### Enhanced Workflow Features
+
+Recent improvements prevent common AI workflow issues:
+
+1. **Smart Content Detection**: The server now detects when LaTeX content has already been saved and warns against regenerating it
+2. **Clear Tool Guidance**: Tool descriptions explicitly guide the preferred workflow (save → use file path)
+3. **Better Error Handling**: Enhanced LaTeX error parser provides specific package installation instructions
+
+Example of the improved workflow:
+```python
+# Step 1: Save LaTeX content
+save_latex(content="...", filename="paper.tex")
+# Returns: "LaTeX saved successfully to: /home/user/Documents/paper.tex"
+
+# Step 2: Convert to PDF using file path (not content!)
+latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf")
+# Efficient: Uses saved file instead of regenerating content
+```
+
 ## Documentation
 
-- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 19 tools
+- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 20 tools
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
 

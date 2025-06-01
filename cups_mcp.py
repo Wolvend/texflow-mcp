@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import hashlib
 import difflib
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -565,11 +566,18 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
     def print_latex(content: Optional[str] = None, file_path: Optional[str] = None, printer: Optional[str] = None, title: str = "Document") -> str:
         """Print LaTeX content (compiled to PDF via XeLaTeX).
         
+        IMPORTANT: If you already saved LaTeX content using save_latex, use the file_path 
+        parameter instead of content to avoid regenerating the same content.
+        
         IMPORTANT printer selection logic for AI agents:
         1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
         2. If printing: Check if default printer exists. If not, ask which printer to use.
         3. Remember the chosen printer for the rest of the session.
         4. Only change printer if user explicitly requests a different one.
+        
+        Workflow options:
+        1. Direct printing: Provide content + printer
+        2. File printing: Provide file_path + printer (PREFERRED if file exists)
         
         Supports:
         - Full LaTeX syntax and packages
@@ -579,8 +587,8 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         - Custom document classes
         
         Args:
-            content: LaTeX content to print (optional if file_path is provided)
-            file_path: Path to LaTeX file to print (optional if content is provided)
+            content: LaTeX content to print (DO NOT use if you already saved the file)
+            file_path: Path to existing LaTeX file (USE THIS if you saved with save_latex)
             printer: Printer name (optional, uses default if not specified)
             title: Document title (optional, used in jobname)
         """
@@ -637,13 +645,9 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
             for _ in range(2):
                 result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
                 if result.returncode != 0:
-                    # Extract error from log
-                    error_lines = result.stdout.split('\n')
-                    for i, line in enumerate(error_lines):
-                        if line.startswith('!'):
-                            error_msg = '\n'.join(error_lines[i:i+5])
-                            return f"LaTeX compilation failed:\n{error_msg}"
-                    return f"LaTeX compilation failed: {result.stderr}"
+                    # Use enhanced error parser
+                    log_path = tex_path.replace('.tex', '.log')
+                    return parse_latex_errors(result.stdout, result.stderr, log_path)
             
             # Print the PDF
             cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
@@ -717,6 +721,15 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         
         if not output_path:
             return "Error: output_path is required"
+        
+        # Check if content was recently saved
+        if content:
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            if content_hash in saved_file_hashes:
+                saved_path = saved_file_hashes[content_hash]
+                return (f"WARNING: This content was already saved to {saved_path}\n"
+                       f"Please use: latex_to_pdf(file_path='{saved_path}', output_path='{output_path}')\n"
+                       f"This avoids regenerating the same content and is more efficient.")
         
         # Handle file_path input
         if file_path:
@@ -871,6 +884,95 @@ def save_markdown(content: str, filename: str) -> str:
 
 
 @mcp.tool()
+def list_available_fonts(style: Optional[str] = None) -> str:
+    """List fonts available for use with XeLaTeX.
+    
+    Args:
+        style: Filter by style - 'serif', 'sans', 'mono', or None for all
+    
+    Returns:
+        List of available fonts with their properties
+    """
+    try:
+        # Use fc-list to get font information
+        cmd = ["fc-list", "--format=%{family}\\n", ":outline=True:scalable=True"]
+        
+        # Add style filter if specified
+        if style:
+            if style.lower() == "serif":
+                cmd[1] = "--format=%{family}\\n"
+                cmd.append(":serif")
+            elif style.lower() == "sans":
+                cmd[1] = "--format=%{family}\\n"
+                cmd.append(":sans")
+            elif style.lower() == "mono":
+                cmd[1] = "--format=%{family}\\n"
+                cmd.append(":mono:spacing=mono")
+                
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            return "Error: fontconfig tools not available. Install fontconfig package."
+        
+        # Parse and deduplicate font families
+        fonts = set()
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                # Handle font families with language variants
+                font_name = line.split(',')[0].strip()
+                if font_name:
+                    fonts.add(font_name)
+        
+        # Sort fonts alphabetically
+        sorted_fonts = sorted(fonts)
+        
+        # Build response
+        response = f"Available {style or 'system'} fonts for XeLaTeX ({len(sorted_fonts)} found):\n\n"
+        
+        # Group by first letter for easier browsing
+        current_letter = ""
+        for font in sorted_fonts:
+            first_letter = font[0].upper()
+            if first_letter != current_letter:
+                current_letter = first_letter
+                response += f"\n{current_letter}:\n"
+            response += f"  {font}\n"
+        
+        # Add usage example
+        response += "\n\nTo use a font in LaTeX:\n"
+        response += "\\usepackage{fontspec}\n"
+        response += "\\setmainfont{Font Name}     % for main text\n"
+        response += "\\setsansfont{Font Name}     % for sans-serif\n"
+        response += "\\setmonofont{Font Name}     % for monospace\n"
+        
+        # Add common recommendations
+        response += "\n\nPopular choices:\n"
+        
+        common_fonts = {
+            "serif": ["Liberation Serif", "DejaVu Serif", "Noto Serif", "Linux Libertine", "TeX Gyre Termes"],
+            "sans": ["Liberation Sans", "DejaVu Sans", "Noto Sans", "Open Sans", "Roboto"],
+            "mono": ["Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Fira Code", "JetBrains Mono"]
+        }
+        
+        for category, font_list in common_fonts.items():
+            available = [f for f in font_list if f in sorted_fonts]
+            if available:
+                response += f"\n{category.title()}:"
+                for font in available[:3]:  # Show up to 3
+                    response += f"\n  - {font}"
+        
+        return response
+        
+    except FileNotFoundError:
+        return "Error: fontconfig not installed. Install with:\n" + \
+               "  Debian/Ubuntu: apt install fontconfig\n" + \
+               "  Fedora: dnf install fontconfig\n" + \
+               "  Arch: pacman -S fontconfig"
+    except Exception as e:
+        return f"Error listing fonts: {str(e)}"
+
+
+@mcp.tool()
 def validate_latex(content: str) -> str:
     """Validate LaTeX content for syntax errors before compilation.
     
@@ -983,6 +1085,13 @@ def validate_latex(content: str) -> str:
 def save_latex(content: str, filename: str) -> str:
     """Save LaTeX content to a .tex file.
     
+    After saving, you can:
+    - Convert to PDF: Use latex_to_pdf with file_path=<saved_file>
+    - Print: Use print_latex with file_path=<saved_file>
+    
+    IMPORTANT: Do NOT regenerate the content when using latex_to_pdf or print_latex.
+    Instead, use the file_path parameter with the path returned by this function.
+    
     Args:
         content: LaTeX content to save
         filename: Filename to save. Can be:
@@ -1021,6 +1130,11 @@ def save_latex(content: str, filename: str) -> str:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
+        # Track content hash to detect redundant regeneration
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        saved_file_hashes[content_hash] = output_path
+        recent_content_hashes.append(content_hash)
+        
         return f"LaTeX saved successfully to: {output_path}"
     except PermissionError:
         return f"Permission denied: Cannot write to {output_path}"
@@ -1034,11 +1148,16 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
     def latex_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
         """Convert LaTeX content to PDF and save to specified path.
         
-        This is useful for generating PDFs without printing them.
+        IMPORTANT: If you already saved LaTeX content using save_latex, use the file_path 
+        parameter instead of content to avoid regenerating the same content.
+        
+        Workflow options:
+        1. Direct conversion: Provide content + output_path
+        2. File conversion: Provide file_path + output_path (PREFERRED if file exists)
         
         Args:
-            content: LaTeX content to convert (optional if file_path is provided)
-            file_path: Path to LaTeX file to convert (optional if content is provided)
+            content: LaTeX content to convert (DO NOT use if you already saved the file)
+            file_path: Path to existing LaTeX file (USE THIS if you saved with save_latex)
             output_path: Path where PDF should be saved. Can be:
                 - Full path: /home/user/Documents/file.pdf
                 - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
@@ -1054,6 +1173,15 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         
         if not output_path:
             return "Error: output_path is required"
+        
+        # Check if content was recently saved
+        if content:
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            if content_hash in saved_file_hashes:
+                saved_path = saved_file_hashes[content_hash]
+                return (f"WARNING: This content was already saved to {saved_path}\n"
+                       f"Please use: latex_to_pdf(file_path='{saved_path}', output_path='{output_path}')\n"
+                       f"This avoids regenerating the same content and is more efficient.")
         
         # Handle file_path input
         if file_path:
@@ -1124,13 +1252,9 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
             for _ in range(2):
                 result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
                 if result.returncode != 0:
-                    # Extract error from log
-                    error_lines = result.stdout.split('\n')
-                    for i, line in enumerate(error_lines):
-                        if line.startswith('!'):
-                            error_msg = '\n'.join(error_lines[i:i+5])
-                            return f"LaTeX compilation failed:\n{error_msg}"
-                    return f"LaTeX compilation failed: {result.stderr}"
+                    # Use enhanced error parser
+                    log_path = tex_path.replace('.tex', '.log')
+                    return parse_latex_errors(result.stdout, result.stderr, log_path)
             
             # Move the generated PDF to the desired location
             generated_pdf = tex_path.replace('.tex', '.pdf')
@@ -1405,9 +1529,108 @@ def print_file(path: str, printer: Optional[str] = None) -> str:
 import time
 import hashlib
 from datetime import datetime
+from collections import deque
 
 # Store file metadata for change detection
 file_metadata = {}
+
+# Track recent content hashes to detect redundant regeneration
+recent_content_hashes = deque(maxlen=10)  # Keep last 10 hashes
+saved_file_hashes = {}  # Map content hash to saved file path
+
+
+def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
+    """Parse LaTeX compilation errors and provide helpful installation instructions."""
+    error_msg = []
+    missing_packages = set()
+    
+    # Check for missing package errors
+    for line in stdout.split('\n'):
+        if '! LaTeX Error: File' in line and 'not found' in line:
+            # Extract package name from error like "File `tikz.sty' not found"
+            import re
+            match = re.search(r"File `([^']+)' not found", line)
+            if match:
+                package = match.group(1).replace('.sty', '')
+                missing_packages.add(package)
+        elif 'Package' in line and 'was not found' in line:
+            # Handle other package not found formats
+            match = re.search(r"Package (\S+) was not found", line)
+            if match:
+                missing_packages.add(match.group(1))
+        elif line.startswith('!'):
+            error_msg.append(line)
+    
+    # Read log file for more details if available
+    if log_path and os.path.exists(log_path):
+        try:
+            with open(log_path, 'r') as log:
+                log_content = log.read()
+                # Look for missing package patterns in log
+                for match in re.finditer(r"! LaTeX Error: File `([^']+)' not found", log_content):
+                    package = match.group(1).replace('.sty', '')
+                    missing_packages.add(package)
+                
+                # Extract context around errors
+                if not error_msg:
+                    lines = log_content.split('\n')
+                    for i, line in enumerate(lines):
+                        if line.startswith('!'):
+                            # Get error and context
+                            error_context = lines[i:min(i+5, len(lines))]
+                            error_msg.extend(error_context)
+                            break
+        except:
+            pass
+    
+    # Build helpful error message
+    if missing_packages:
+        result = "LaTeX compilation failed due to missing packages:\n\n"
+        result += "Missing packages:\n"
+        for pkg in sorted(missing_packages):
+            result += f"  - {pkg}\n"
+        
+        result += f"\nTo install these packages on {DISTRO}:\n"
+        
+        # Package suggestions based on common mappings
+        package_suggestions = {
+            'tikz': PACKAGE_MAPPINGS.get('tikz', {}),
+            'graphicx': {'arch': 'texlive-pictures', 'debian': 'texlive-pictures', 'redhat': 'texlive-collection-pictures'},
+            'amsmath': {'arch': 'texlive-science', 'debian': 'texlive-science', 'redhat': 'texlive-collection-mathscience'},
+            'hyperref': {'arch': 'texlive-latexextra', 'debian': 'texlive-latex-extra', 'redhat': 'texlive-collection-latexextra'},
+            'babel': {'arch': 'texlive-langeuropean', 'debian': 'texlive-lang-european', 'redhat': 'texlive-collection-langeuropean'},
+        }
+        
+        # Provide installation commands
+        install_commands = set()
+        for pkg in missing_packages:
+            if pkg in package_suggestions:
+                cmd = get_install_command(package_suggestions[pkg])
+                install_commands.add(cmd)
+            else:
+                # Generic suggestion for unknown packages
+                if DISTRO == 'arch':
+                    install_commands.add(f"sudo pacman -S texlive-latexextra  # (may contain {pkg})")
+                elif DISTRO == 'debian':
+                    install_commands.add(f"sudo apt install texlive-latex-extra  # (may contain {pkg})")
+                elif DISTRO == 'redhat':
+                    install_commands.add(f"sudo dnf install texlive-collection-latexextra  # (may contain {pkg})")
+        
+        for cmd in sorted(install_commands):
+            result += f"  {cmd}\n"
+        
+        result += "\nAlternatively, install texlive-full for all packages (large download)."
+        
+        if error_msg:
+            result += f"\n\nOriginal error:\n" + '\n'.join(error_msg[:5])
+    elif error_msg:
+        result = "LaTeX compilation failed:\n" + '\n'.join(error_msg[:10])
+        if len(error_msg) > 10:
+            result += f"\n... and {len(error_msg)-10} more error lines"
+    else:
+        result = f"LaTeX compilation failed: {stderr if stderr else 'Unknown error'}"
+    
+    return result
 
 @mcp.tool()
 def check_document_status(file_path: str) -> str:
