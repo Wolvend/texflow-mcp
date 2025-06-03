@@ -834,6 +834,129 @@ else:
         return f"Markdown to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
 
 
+# Register markdown_to_latex if dependencies are available
+if DEPENDENCIES["pandoc"]["available"]:
+    @mcp.tool()
+    def markdown_to_latex(file_path: str, output_path: Optional[str] = None, title: str = "Document", standalone: bool = True) -> str:
+        """Convert a Markdown file to LaTeX format.
+        
+        This tool provides access to the intermediate LaTeX file that pandoc generates,
+        allowing for manual customization before final PDF compilation.
+        
+        Workflow:
+        1. Write content in Markdown (easier to write)
+        2. Convert to LaTeX using this tool
+        3. Fine-tune the LaTeX if needed
+        4. Compile to PDF using latex_to_pdf
+        
+        Args:
+            file_path: Path to Markdown file. Can be:
+                - Simple name: document.md (reads from ~/Documents/)
+                - Full path: /home/user/Documents/document.md
+                - Relative to Documents: notes/document.md
+            output_path: Path where LaTeX file should be saved (optional).
+                If not specified, uses same name with .tex extension
+            title: Document title (optional)
+            standalone: Create complete LaTeX document (True) or just fragment (False)
+        
+        Returns:
+            Success message with output file path, or error description
+        """
+        # Handle input file path
+        input_path = Path(file_path).expanduser()
+        
+        # If no directory specified, check Documents folder
+        if not input_path.is_absolute() and "/" not in str(file_path):
+            input_path = Path.home() / "Documents" / file_path
+        elif not input_path.is_absolute():
+            # Relative path within Documents
+            input_path = Path.home() / "Documents" / file_path
+        
+        if not input_path.exists():
+            return f"File not found: {input_path}"
+        
+        # Handle output path
+        if output_path:
+            output_path = str(Path(output_path).expanduser())
+            # If no directory specified, default to Documents folder
+            if "/" not in output_path:
+                documents_dir = Path.home() / "Documents"
+                documents_dir.mkdir(exist_ok=True)
+                output_path = str(documents_dir / output_path)
+        else:
+            # Use same location as input file, just change extension
+            output_path = str(input_path.with_suffix('.tex'))
+        
+        # Ensure output path ends with .tex
+        if not output_path.endswith('.tex'):
+            output_path += '.tex'
+        
+        # Check if output file already exists
+        if Path(output_path).exists():
+            # Generate unique filename
+            base = Path(output_path).stem
+            dir_path = Path(output_path).parent
+            counter = 1
+            while Path(output_path).exists():
+                output_path = str(dir_path / f"{base}_{counter}.tex")
+                counter += 1
+        
+        try:
+            # Prepare pandoc command
+            pandoc_cmd = [
+                "pandoc",
+                str(input_path),
+                "-o", output_path,
+                "--metadata", f"title={title}",
+                "-t", "latex"
+            ]
+            
+            if standalone:
+                pandoc_cmd.extend([
+                    "-s",  # standalone document
+                    "--pdf-engine=xelatex",
+                    "-V", "geometry:margin=1in",
+                    "-V", "mainfont=Noto Serif",
+                    "-V", "sansfont=Noto Sans",
+                    "-V", "monofont=Noto Sans Mono"
+                ])
+            
+            # Run pandoc
+            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                return f"Markdown to LaTeX conversion failed: {result.stderr}"
+            
+            # Verify file was created
+            if not Path(output_path).exists():
+                return f"Conversion failed - LaTeX file was not created at {output_path}"
+            
+            # Add a comment at the top of the LaTeX file about its origin
+            with open(output_path, 'r', encoding='utf-8') as f:
+                latex_content = f.read()
+            
+            # Add conversion info comment
+            comment = f"% Converted from Markdown: {input_path.name}\n% Conversion date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n% Use latex_to_pdf to compile this file to PDF\n\n"
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(comment + latex_content)
+            
+            return f"Markdown successfully converted to LaTeX: {output_path}\n\nNext steps:\n1. Review/edit the LaTeX file if needed\n2. Use latex_to_pdf(file_path='{output_path}', output_path='document.pdf') to create PDF"
+            
+        except PermissionError:
+            return f"Permission denied: Cannot write to {output_path}"
+        except Exception as e:
+            return f"Failed to convert Markdown to LaTeX: {str(e)}"
+else:
+    @mcp.tool()
+    def markdown_to_latex(file_path: str, output_path: Optional[str] = None, title: str = "Document", standalone: bool = True) -> str:
+        """Convert Markdown to LaTeX (UNAVAILABLE - missing dependencies).
+        
+        This tool requires pandoc to be installed.
+        """
+        return f"Markdown to LaTeX conversion is not available. Missing dependency:\n{DEPENDENCIES['pandoc']['install_hint']}"
+
+
 @mcp.tool()
 def save_markdown(content: str, filename: str) -> str:
     """Save markdown content to a file.
