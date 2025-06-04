@@ -632,22 +632,10 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         pdf_path = tex_path.replace('.tex', '.pdf')
         
         try:
-            # Run XeLaTeX
-            xelatex_cmd = [
-                "xelatex",
-                "-interaction=nonstopmode",
-                f"-jobname={Path(tex_path).stem}",
-                "-output-directory", str(Path(tex_path).parent),
-                tex_path
-            ]
-            
-            # Run twice for references and TOC
-            for _ in range(2):
-                result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    # Use enhanced error parser
-                    log_path = tex_path.replace('.tex', '.log')
-                    return parse_latex_errors(result.stdout, result.stderr, log_path)
+            # Compile with bibliography support
+            success, error_msg = compile_latex_with_bibliography(tex_path)
+            if not success:
+                return error_msg
             
             # Print the PDF
             cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
@@ -661,11 +649,11 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         finally:
             # Clean up temporary files only if we created them
             if temp_file:
-                for ext in ['.tex', '.pdf', '.aux', '.log']:
+                for ext in ['.tex', '.pdf', '.aux', '.log', '.bbl', '.blg']:
                     Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
             else:
                 # For user files, only clean up auxiliary files
-                for ext in ['.aux', '.log']:
+                for ext in ['.aux', '.log', '.bbl', '.blg']:
                     Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
 else:
     @mcp.tool()
@@ -1362,22 +1350,10 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
                 counter += 1
         
         try:
-            # Run XeLaTeX
-            xelatex_cmd = [
-                "xelatex",
-                "-interaction=nonstopmode",
-                f"-jobname={Path(tex_path).stem}",
-                "-output-directory", str(Path(tex_path).parent),
-                tex_path
-            ]
-            
-            # Run twice for references and TOC
-            for _ in range(2):
-                result = subprocess.run(xelatex_cmd, capture_output=True, text=True)
-                if result.returncode != 0:
-                    # Use enhanced error parser
-                    log_path = tex_path.replace('.tex', '.log')
-                    return parse_latex_errors(result.stdout, result.stderr, log_path)
+            # Compile with bibliography support
+            success, error_msg = compile_latex_with_bibliography(tex_path)
+            if not success:
+                return error_msg
             
             # Move the generated PDF to the desired location
             generated_pdf = tex_path.replace('.tex', '.pdf')
@@ -1392,11 +1368,11 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         finally:
             # Clean up temporary files only if we created them
             if temp_file:
-                for ext in ['.tex', '.aux', '.log']:
+                for ext in ['.tex', '.aux', '.log', '.bbl', '.blg']:
                     Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
             else:
                 # For user files, only clean up auxiliary files
-                for ext in ['.aux', '.log']:
+                for ext in ['.aux', '.log', '.bbl', '.blg']:
                     Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
 else:
     @mcp.tool()
@@ -1660,6 +1636,98 @@ file_metadata = {}
 # Track recent content hashes to detect redundant regeneration
 recent_content_hashes = deque(maxlen=10)  # Keep last 10 hashes
 saved_file_hashes = {}  # Map content hash to saved file path
+
+
+def detect_bibliography(content: str) -> bool:
+    """Detect if LaTeX content uses bibliography features.
+    
+    Returns True if the document contains:
+    - \bibliography{...}
+    - \addbibresource{...}
+    - \cite{...}
+    - bibtex/biblatex package inclusion
+    """
+    bibliography_patterns = [
+        r'\\bibliography\{',
+        r'\\addbibresource\{',
+        r'\\cite\{',
+        r'\\citep\{',
+        r'\\citet\{',
+        r'\\usepackage.*\{.*bib(tex|latex)',
+        r'\\bibliographystyle\{',
+    ]
+    
+    for pattern in bibliography_patterns:
+        if re.search(pattern, content):
+            return True
+    return False
+
+
+def compile_latex_with_bibliography(tex_path: str, working_dir: str = None) -> tuple[bool, str]:
+    """Compile LaTeX document with proper bibliography handling.
+    
+    Args:
+        tex_path: Path to the .tex file
+        working_dir: Working directory for compilation (defaults to tex file directory)
+    
+    Returns:
+        Tuple of (success: bool, error_message: str)
+    """
+    if working_dir is None:
+        working_dir = str(Path(tex_path).parent)
+    
+    base_name = Path(tex_path).stem
+    
+    # First pass - generate .aux file
+    xelatex_cmd = [
+        "xelatex",
+        "-interaction=nonstopmode",
+        f"-jobname={base_name}",
+        "-output-directory", working_dir,
+        tex_path
+    ]
+    
+    # First XeLaTeX pass
+    result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
+    if result.returncode != 0:
+        log_path = os.path.join(working_dir, f"{base_name}.log")
+        return False, parse_latex_errors(result.stdout, result.stderr, log_path)
+    
+    # Check if .aux file exists and has citations
+    aux_path = os.path.join(working_dir, f"{base_name}.aux")
+    if os.path.exists(aux_path):
+        with open(aux_path, 'r', encoding='utf-8', errors='ignore') as f:
+            aux_content = f.read()
+        
+        # If citations exist, run bibtex
+        if '\\citation{' in aux_content or '\\bibdata{' in aux_content:
+            # Run BibTeX
+            bibtex_cmd = ["bibtex", base_name]
+            result = subprocess.run(bibtex_cmd, capture_output=True, text=True, cwd=working_dir)
+            
+            # BibTeX may have warnings but still succeed
+            if result.returncode > 1:  # 0 = success, 1 = warnings, >1 = errors
+                return False, f"BibTeX failed: {result.stderr}"
+            
+            # Second XeLaTeX pass - incorporate bibliography
+            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
+            if result.returncode != 0:
+                log_path = os.path.join(working_dir, f"{base_name}.log")
+                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
+            
+            # Third XeLaTeX pass - resolve all references
+            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
+            if result.returncode != 0:
+                log_path = os.path.join(working_dir, f"{base_name}.log")
+                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
+        else:
+            # No bibliography, just run second pass for TOC/references
+            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
+            if result.returncode != 0:
+                log_path = os.path.join(working_dir, f"{base_name}.log")
+                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
+    
+    return True, ""
 
 
 def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
