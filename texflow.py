@@ -2094,7 +2094,7 @@ def detect_bibliography(content: str) -> bool:
     Returns True if the document contains:
     - \bibliography{...}
     - \addbibresource{...}
-    - \cite{...}
+    - \\cite{...}
     - bibtex/biblatex package inclusion
     """
     bibliography_patterns = [
