@@ -29,8 +29,9 @@
         {
           "operation": "document",
           "action": "edit",
-          "hint": "Continue editing the document",
-          "example": "Edit to add more content"
+          "hint": "Edit specific parts of the document",
+          "example": "Fix equation on page 2",
+          "important": "Use edit for changes - NEVER regenerate entire documents"
         },
         {
           "operation": "output",
@@ -122,6 +123,17 @@
           "hint": "Create a quick document without a project",
           "example": "Write a quick note"
         }
+      ]
+    }
+  },
+  
+  "token_efficiency_hints": {
+    "document_found": {
+      "critical": "ALWAYS use edit operations on existing documents",
+      "reason": "Regenerating documents wastes tokens and loses user edits",
+      "examples": [
+        "To fix a typo: document(action='edit', changes=[{'old': 'teh', 'new': 'the'}])",
+        "To add section: document(action='edit', changes=[{'old': '\\section{Conclusion}', 'new': '\\section{Results}\n\nNew content...\n\n\\section{Conclusion}'}])"
       ]
     }
   },

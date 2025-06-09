@@ -465,7 +465,7 @@ wheels = [
 [[package]]
 name = "texflow"
 version = "0.2.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
     { name = "pillow" },

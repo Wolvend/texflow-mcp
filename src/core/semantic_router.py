@@ -172,6 +172,30 @@ class SemanticRouter:
                 if triggers:
                     result["format_suggestion"] = self._get_format_escalation(triggers)
         
+        # Add token efficiency hints for existing documents
+        if operation == "document" and action in ["read", "status"]:
+            result["efficiency_hint"] = {
+                "message": "Document exists - use edit operations for changes",
+                "important": "NEVER regenerate existing documents",
+                "next_steps": [
+                    {
+                        "operation": "document",
+                        "action": "edit",
+                        "description": "Make specific changes to this document",
+                        "command": "document(action='edit', path='...', changes=[...])"
+                    }
+                ]
+            }
+        
+        # Add conversion hint when format change is needed
+        if operation == "document" and action == "create" and result.get("format") == "markdown":
+            if any(trigger in str(params.get("intent", "")).lower() 
+                   for trigger in ["latex", "academic", "paper", "thesis"]):
+                result["conversion_hint"] = {
+                    "message": "Need LaTeX features? Convert your Markdown instead of rewriting",
+                    "command": "document(action='convert', source='file.md', target_format='latex')"
+                }
+        
         return result
     
     def _format_suggestions(self, suggestions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
