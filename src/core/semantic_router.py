@@ -176,7 +176,7 @@ class SemanticRouter:
         if operation == "document" and action in ["read", "status"]:
             result["efficiency_hint"] = {
                 "message": "Document exists - use edit operations for changes",
-                "important": "NEVER regenerate existing documents",
+                "important": "Avoid regenerating documents unless: corrupted, unreadable, needs complete rewrite, or user specifically requests it",
                 "next_steps": [
                     {
                         "operation": "document",
