@@ -14,6 +14,7 @@ from .core.format_detector import FormatDetector
 from .features.document import DocumentOperation
 from .features.output import OutputOperation
 from .features.project import ProjectOperation
+from .features.organizer import OrganizerOperation
 
 
 class TeXFlowSemantic:
@@ -64,6 +65,11 @@ class TeXFlowSemantic:
         project_op = ProjectOperation(self.texflow)
         self.registry.register("project", project_op)
         self.router.register_operation("project", project_op)
+        
+        # Organizer operation
+        organizer_op = OrganizerOperation()
+        self.registry.register("organizer", organizer_op)
+        self.router.register_operation("organizer", organizer_op)
         
         # TODO: Register remaining operations when implemented
         # - printer
@@ -330,6 +336,39 @@ def create_semantic_tools(texflow_instance) -> List[Dict[str, Any]]:
                 "required": ["action"]
             },
             "handler": lambda args: semantic.execute("project", args["action"], args)
+        },
+        {
+            "name": "organizer",
+            "description": "Organize documents - move, archive, manage versions, clean auxiliary files",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["move", "archive", "restore", "list_archived", "find_versions", 
+                                "clean", "clean_aux", "refresh_aux", "list_aux", "batch"],
+                        "description": "Organizer action"
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "Source path (for move)"
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Destination path (for move)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "File/directory path"
+                    },
+                    "operations": {
+                        "type": "array",
+                        "description": "Batch operations list"
+                    }
+                },
+                "required": ["action"]
+            },
+            "handler": lambda args: semantic.execute("organizer", args["action"], args)
         }
     ]
     
