@@ -29,6 +29,9 @@ from mcp.server.fastmcp import FastMCP
 import cups
 import magic
 
+# Import document manager for organizer functionality
+from src.features.document.document_manager import document_manager
+
 
 # TeXFlow Configuration
 TEXFLOW_CONFIG_DIR = Path.home() / ".config" / "texflow"
@@ -1529,22 +1532,54 @@ def list_available_fonts(style: Optional[str] = None) -> str:
 
 
 @mcp.tool()
-def validate_latex(content: str) -> str:
+def validate_latex(content: Optional[str] = None, file_path: Optional[str] = None) -> str:
     """Validate LaTeX content for syntax errors before compilation.
     
     Uses lacheck and chktex (if available) and attempts a test compilation
     to identify issues before actually printing or saving.
     
     Args:
-        content: LaTeX content to validate
+        content: LaTeX content to validate (optional if file_path is provided)
+        file_path: Path to LaTeX file to validate (optional if content is provided)
     
     Returns:
         Validation report with any errors or warnings found
     """
-    # Create temporary LaTeX file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
-        f.write(content)
-        tex_path = f.name
+    # Validate input
+    if not content and not file_path:
+        return "Error: Either content or file_path must be provided"
+    
+    if content and file_path:
+        return "Error: Provide either content or file_path, not both"
+    
+    # Handle file_path input
+    if file_path:
+        # Expand path
+        path = Path(file_path).expanduser()
+        
+        # If no directory specified, check Documents folder
+        if not path.is_absolute() and "/" not in str(file_path):
+            path = Path.home() / "Documents" / file_path
+        elif not path.is_absolute():
+            # Relative path within Documents
+            path = Path.home() / "Documents" / file_path
+        
+        if not path.exists():
+            return f"File not found: {path}"
+        
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            tex_path = str(path)
+            temp_file = False
+        except Exception as e:
+            return f"Failed to read file: {str(e)}"
+    else:
+        # Create temporary LaTeX file from content
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
+            f.write(content)
+            tex_path = f.name
+        temp_file = True
     
     try:
         report = []
@@ -1570,6 +1605,64 @@ def validate_latex(content: str) -> str:
             if result.stdout:
                 report.append("\n=== ChkTeX Analysis ===")
                 report.append(result.stdout.strip())
+        
+        # Perform semantic LaTeX validation without compilation
+        report.append("\n=== Semantic Validation ===")
+        semantic_errors = []
+        semantic_warnings = []
+        
+        # Check for common LaTeX issues
+        lines = content.split('\n')
+        for i, line in enumerate(lines, 1):
+            # Check for unbalanced math delimiters
+            dollar_count = line.count('$') - line.count('\\$')
+            if dollar_count % 2 != 0:
+                semantic_errors.append(f"Line {i}: Unbalanced $ (math mode) - odd number of $")
+            
+            # Check for common undefined control sequences  
+            import re
+            # Look for backslash followed by non-standard command
+            commands = re.findall(r'\\([a-zA-Z]+)', line)
+            undefined_commands = ['emoj', 'emoji']  # Known problematic commands
+            for cmd in commands:
+                if cmd in undefined_commands:
+                    semantic_errors.append(f"Line {i}: Likely undefined control sequence \\{cmd}")
+            
+            # Check for unicode characters that may cause issues
+            for j, char in enumerate(line):
+                if ord(char) > 127 and ord(char) not in range(0x0100, 0x024F):  # Allow extended Latin
+                    if ord(char) >= 0x1F300:  # Emoji range
+                        semantic_errors.append(f"Line {i}, col {j+1}: Unicode emoji character '{char}' (U+{ord(char):04X}) - will cause XeLaTeX errors")
+                    elif ord(char) >= 0x2600 and ord(char) <= 0x26FF:  # Miscellaneous symbols
+                        semantic_warnings.append(f"Line {i}, col {j+1}: Unicode symbol '{char}' may need special handling")
+            
+            # Check for missing packages based on commands used
+            if '\\includegraphics' in line and '\\usepackage{graphicx}' not in content:
+                semantic_warnings.append(f"Line {i}: \\includegraphics used but graphicx package may not be loaded")
+            if '\\begin{tikzpicture}' in line and '\\usepackage{tikz}' not in content:
+                semantic_errors.append(f"Line {i}: TikZ picture used but tikz package not loaded")
+            
+            # Check for \begin without matching \end
+            begin_match = re.search(r'\\begin\{([^}]+)\}', line)
+            if begin_match:
+                env_name = begin_match.group(1)
+                # Simple check - could be improved with stack tracking
+                if f'\\end{{{env_name}}}' not in content[content.find(line):]:
+                    semantic_warnings.append(f"Line {i}: \\begin{{{env_name}}} may not have matching \\end{{{env_name}}}")
+        
+        # Report semantic issues
+        if semantic_errors:
+            report.append("Errors that will prevent compilation:")
+            for err in semantic_errors:
+                report.append(f"  ✗ {err}")
+        
+        if semantic_warnings:
+            report.append("\nWarnings (may or may not cause issues):")
+            for warn in semantic_warnings:
+                report.append(f"  ⚠ {warn}")
+        
+        if not semantic_errors and not semantic_warnings:
+            report.append("✓ No semantic issues detected")
         
         # Try a quick compilation to catch more errors
         if DEPENDENCIES["xelatex"]["available"]:
@@ -1623,8 +1716,9 @@ def validate_latex(content: str) -> str:
         else:
             report.append("\n⚠ XeLaTeX not available for compilation test.")
         
-        # Clean up temp file
-        os.unlink(tex_path)
+        # Clean up temp file only if we created it
+        if temp_file:
+            os.unlink(tex_path)
         
         if not report:
             return "✓ LaTeX validation passed - no issues found!"
@@ -1632,7 +1726,7 @@ def validate_latex(content: str) -> str:
         return "\n".join(report)
         
     except Exception as e:
-        if os.path.exists(tex_path):
+        if temp_file and os.path.exists(tex_path):
             os.unlink(tex_path)
         return f"Validation error: {str(e)}"
 
@@ -2094,7 +2188,7 @@ def detect_bibliography(content: str) -> bool:
     Returns True if the document contains:
     - \bibliography{...}
     - \addbibresource{...}
-    - \cite{...}
+    - \\cite{...}
     - bibtex/biblatex package inclusion
     """
     bibliography_patterns = [
@@ -2184,6 +2278,7 @@ def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
     """Parse LaTeX compilation errors and provide helpful installation instructions."""
     error_msg = []
     missing_packages = set()
+    error_details = []  # Store errors with line numbers and context
     
     # Check for missing package errors
     for line in stdout.split('\n'):
@@ -2207,20 +2302,57 @@ def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
         try:
             with open(log_path, 'r') as log:
                 log_content = log.read()
+                lines = log_content.split('\n')
+                
                 # Look for missing package patterns in log
                 for match in re.finditer(r"! LaTeX Error: File `([^']+)' not found", log_content):
                     package = match.group(1).replace('.sty', '')
                     missing_packages.add(package)
                 
-                # Extract context around errors
-                if not error_msg:
-                    lines = log_content.split('\n')
-                    for i, line in enumerate(lines):
-                        if line.startswith('!'):
-                            # Get error and context
-                            error_context = lines[i:min(i+5, len(lines))]
-                            error_msg.extend(error_context)
-                            break
+                # Extract detailed error information with line numbers
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
+                    
+                    # Look for errors starting with '!'
+                    if line.startswith('!'):
+                        error_info = {'error': line, 'context': []}
+                        
+                        # Look for line number on next lines
+                        j = i + 1
+                        while j < len(lines) and j < i + 10:
+                            if lines[j].startswith('l.'):
+                                # Extract line number and problematic code
+                                match = re.match(r'l\.(\d+)\s*(.*)', lines[j])
+                                if match:
+                                    error_info['line_num'] = int(match.group(1))
+                                    error_info['problem_code'] = match.group(2)
+                                    
+                                    # Get the continuation line if it exists
+                                    if j + 1 < len(lines) and lines[j + 1].strip():
+                                        error_info['problem_code'] += ' ' + lines[j + 1].strip()
+                                break
+                            j += 1
+                        
+                        # Add context lines
+                        error_info['context'] = lines[i:min(i+5, len(lines))]
+                        error_details.append(error_info)
+                    
+                    # Also look for "Undefined control sequence" patterns
+                    elif "Undefined control sequence" in line:
+                        error_info = {'error': "! Undefined control sequence", 'context': []}
+                        
+                        # The problematic line usually follows
+                        if i + 1 < len(lines):
+                            next_line = lines[i + 1]
+                            match = re.match(r'l\.(\d+)\s*(.*)', next_line)
+                            if match:
+                                error_info['line_num'] = int(match.group(1))
+                                error_info['problem_code'] = match.group(2)
+                                error_info['context'] = lines[i:min(i+4, len(lines))]
+                                error_details.append(error_info)
+                    
+                    i += 1
         except:
             pass
     
@@ -2262,8 +2394,35 @@ def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
         
         result += "\nAlternatively, install texlive-full for all packages (large download)."
         
-        if error_msg:
-            result += f"\n\nOriginal error:\n" + '\n'.join(error_msg[:5])
+        if error_details:
+            result += f"\n\nAdditional errors found:\n"
+            for err in error_details[:3]:
+                result += f"\n{err['error']}"
+                if 'line_num' in err:
+                    result += f" (Line {err['line_num']})"
+                if 'problem_code' in err:
+                    result += f"\n  Problem: {err['problem_code']}"
+                result += "\n"
+    elif error_details:
+        # Show detailed errors with line numbers
+        result = "LaTeX compilation failed with the following errors:\n"
+        
+        for i, err in enumerate(error_details[:5]):
+            result += f"\n{i+1}. {err['error']}"
+            if 'line_num' in err:
+                result += f" (Line {err['line_num']})"
+            if 'problem_code' in err:
+                result += f"\n   Problem: {err['problem_code']}"
+            result += "\n"
+        
+        if len(error_details) > 5:
+            result += f"\n... and {len(error_details)-5} more errors"
+        
+        # Add helpful hints for common errors
+        result += "\n\nCommon solutions:"
+        result += "\n- Undefined control sequence: Check for typos in LaTeX commands"
+        result += "\n- Missing $: Math mode delimiters are not balanced"  
+        result += "\n- File not found: Check file paths and package names"
     elif error_msg:
         result = "LaTeX compilation failed:\n" + '\n'.join(error_msg[:10])
         if len(error_msg) > 10:
@@ -2568,6 +2727,126 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
         return f"Permission denied: Cannot write to {path}"
     except Exception as e:
         return f"Failed to edit document: {str(e)}"
+
+
+# Document Organization Tools
+
+@mcp.tool()
+def archive_document(path: str, reason: str = "manual") -> str:
+    """Archive (soft delete) a document to hidden .texflow_archive folder.
+    
+    The document is moved to a timestamped archive, preserving it for future recovery.
+    
+    Args:
+        path: Path to document to archive
+        reason: Reason for archiving (manual, replaced, outdated, etc.)
+    """
+    result = document_manager.archive_document(path, reason)
+    
+    if result["success"]:
+        return f"Archived {Path(path).name} to {result['archive_name']}"
+    else:
+        return f"Archive failed: {result['error']}"
+
+
+@mcp.tool()
+def list_archived_documents(directory: str = "") -> str:
+    """List all archived documents in a directory.
+    
+    Args:
+        directory: Directory to check (defaults to current project or Documents)
+    """
+    if not directory:
+        if current_project:
+            directory = str(get_project_base() / current_project)
+        else:
+            directory = str(Path.home() / "Documents")
+    
+    archives = document_manager.list_archived(directory)
+    
+    if not archives:
+        return "No archived documents found"
+    
+    output = f"Found {len(archives)} archived document(s):\n"
+    for arch in archives:
+        size_kb = arch.get("size", 0) / 1024
+        output += f"\n- {arch.get('original_name', 'unknown')}"
+        output += f"\n  Archived: {arch.get('archived_at', 'unknown')}"
+        output += f"\n  Reason: {arch.get('reason', 'unknown')}"
+        output += f"\n  Size: {size_kb:.1f} KB"
+    
+    return output
+
+
+@mcp.tool()
+def restore_archived_document(archive_path: str, restore_path: Optional[str] = None) -> str:
+    """Restore an archived document.
+    
+    Args:
+        archive_path: Path to archived document
+        restore_path: Where to restore (defaults to original location)
+    """
+    result = document_manager.restore_document(archive_path, restore_path)
+    
+    if result["success"]:
+        return f"Restored document to {result['restored_to']}"
+    else:
+        return f"Restore failed: {result['error']}"
+
+
+@mcp.tool()
+def find_document_versions(filename: str, directory: str = "") -> str:
+    """Find all versions of a document (current and archived).
+    
+    Args:
+        filename: Base filename to search for
+        directory: Directory to search (defaults to current project or Documents)
+    """
+    if not directory:
+        if current_project:
+            directory = str(get_project_base() / current_project)
+        else:
+            directory = str(Path.home() / "Documents")
+    
+    versions = document_manager.find_versions(filename, directory)
+    
+    if not versions:
+        return f"No versions of '{filename}' found"
+    
+    output = f"Found {len(versions)} version(s) of '{filename}':\n"
+    for ver in versions:
+        size_kb = ver["size"] / 1024
+        output += f"\n- {ver['name']} ({ver['type']})"
+        output += f"\n  Modified: {ver['modified']}"
+        output += f"\n  Size: {size_kb:.1f} KB"
+        output += f"\n  Path: {ver['path']}"
+    
+    return output
+
+
+@mcp.tool()
+def clean_workspace(directory: str = "", pattern: str = "*_old*") -> str:
+    """Archive multiple files matching a pattern.
+    
+    Useful for cleaning up old versions, drafts, or temporary files.
+    
+    Args:
+        directory: Directory to clean (defaults to current project or Documents)
+        pattern: Glob pattern for files to archive (default: *_old*)
+    """
+    if not directory:
+        if current_project:
+            directory = str(get_project_base() / current_project)
+        else:
+            directory = str(Path.home() / "Documents")
+    
+    result = document_manager.clean_workspace(directory, pattern)
+    
+    if result["success"]:
+        return f"Archived {result['archived_count']} file(s) matching '{pattern}'"
+    else:
+        errors = "\n".join(result.get("errors", []))
+        return f"Cleanup completed with errors:\n{errors}"
 
 
 # This is needed for FastMCP to find the server
