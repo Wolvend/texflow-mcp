@@ -3,6 +3,13 @@
 
 TeXFlow provides a complete pipeline for document creation:
 Content (text/markdown/LaTeX) → Processing (TeX/PDF) → Output (print/save)
+
+IMPORTANT GUIDANCE FOR AI AGENTS:
+- Don't assume users know about LaTeX - intelligently escalate formats based on needs
+- Not every document needs to be printed or even converted to PDF
+- Use suggest_document_workflow() when unsure about user intent
+- Default to Markdown for simplicity, upgrade to LaTeX only when features require it
+- Projects are optional - work directly with files for simple tasks
 """
 
 import os
@@ -63,7 +70,18 @@ def get_project_base() -> Path:
 
 
 def resolve_project_path(file_path: str, create_dirs: bool = True) -> Path:
-    """Resolve a file path within the current project context.
+    """Resolve a file path within the current project context or ad-hoc usage.
+    
+    Path resolution order:
+    1. Absolute paths are used as-is
+    2. Paths starting with ~ are expanded
+    3. If a project is active, paths are relative to the project
+    4. Otherwise, paths are relative to ~/Documents
+    
+    This allows flexible usage:
+    - With projects for organized work
+    - Without projects for quick document fixes
+    - With explicit paths for specific locations
     
     Args:
         file_path: The file path to resolve
@@ -99,12 +117,19 @@ def resolve_project_path(file_path: str, create_dirs: bool = True) -> Path:
             
         return resolved
     
-    # No active project - use Documents folder as before
+    # No active project - use Documents folder as fallback
+    # This enables ad-hoc usage without requiring a project
     documents_dir = Path.home() / "Documents"
     if "/" not in str(file_path):
-        return documents_dir / file_path
+        resolved = documents_dir / file_path
     else:
-        return documents_dir / file_path
+        resolved = documents_dir / file_path
+        
+    # Create parent directories if requested
+    if create_dirs and not resolved.parent.exists():
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        
+    return resolved
 
 
 def detect_distro() -> str:
@@ -496,15 +521,24 @@ def update_printer_info(printer_name: str, description: Optional[str] = None, lo
 
 # Project Management Tools
 @mcp.tool()
-def create_project(name: str, template: Optional[str] = "basic") -> str:
-    """Create a new TeXFlow project with organized structure.
+def create_project(name: str, description: Optional[str] = None) -> str:
+    """Create a new TeXFlow project with AI-guided structure.
+    
+    This tool creates a project directory and lets the calling AI decide what
+    structure to create based on the description. The AI agent can interpret
+    user intent and create appropriate directories.
     
     Args:
         name: Project name (will be created under ~/Documents/TeXFlow/)
-        template: Project template - 'basic', 'article', 'thesis', 'letter'
+        description: Free-form description of the project type and needs.
+                    Examples:
+                    - "academic paper with literature review and data analysis"
+                    - "book with multiple chapters and illustrations"
+                    - "collection of technical documentation"
+                    - "minimal" or None for blank project
     
     Returns:
-        Success message with project path, or error description
+        Project creation details and suggested structure
     """
     global current_project
     
@@ -519,33 +553,18 @@ def create_project(name: str, template: Optional[str] = "basic") -> str:
         return f"Error: Project '{name}' already exists at {project_dir}"
     
     try:
-        # Create project structure
+        # Create base project directory
         project_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create subdirectories based on template
-        if template in ["article", "thesis"]:
-            (project_dir / "content").mkdir()
-            (project_dir / "output").mkdir()
-            (project_dir / "output" / "pdf").mkdir()
-            (project_dir / "output" / "tex").mkdir()
-            (project_dir / "assets").mkdir()
-            (project_dir / "assets" / "images").mkdir()
-            (project_dir / "assets" / "data").mkdir()
-            
-            if template == "thesis":
-                (project_dir / "content" / "chapters").mkdir()
-                (project_dir / "content" / "appendices").mkdir()
-                (project_dir / "references").mkdir()
-        else:
-            # Basic template
-            (project_dir / "output").mkdir()
+        # Always create output directory for generated files
+        (project_dir / "output").mkdir()
         
         # Create project metadata
         project_meta = {
             "name": name,
-            "template": template,
+            "description": description or "No description provided",
             "created": datetime.now().isoformat(),
-            "description": ""
+            "structure": "ai-guided"
         }
         
         with open(project_dir / ".project", 'w') as f:
@@ -557,7 +576,23 @@ def create_project(name: str, template: Optional[str] = "basic") -> str:
         config["active_project"] = name
         save_texflow_config(config)
         
-        return f"Created project '{name}' at {project_dir}\nProject is now active."
+        # Return guidance for the AI agent
+        response = f"Created project '{name}' at {project_dir}\nProject is now active.\n\n"
+        
+        if description and description.lower() not in ["minimal", "blank", "empty"]:
+            response += "Project structure suggestions based on description:\n"
+            response += f"Description: {description}\n\n"
+            response += "The AI agent can now create appropriate directories such as:\n"
+            response += "- content/ - for source documents\n"
+            response += "- assets/images/ - for figures and graphics\n"
+            response += "- references/ - for bibliography\n"
+            response += "- data/ - for datasets\n"
+            response += "- Any other structure that fits the project needs\n\n"
+            response += "Use standard mkdir commands or create directories as needed when saving files."
+        else:
+            response += "Minimal project created. Directories will be created as needed."
+        
+        return response
         
     except Exception as e:
         return f"Failed to create project: {str(e)}"
@@ -583,7 +618,7 @@ def list_projects() -> str:
                     meta = json.load(f)
                     projects.append({
                         "name": item.name,
-                        "template": meta.get("template", "unknown"),
+                        "description": meta.get("description", meta.get("template", "No description")),
                         "created": meta.get("created", "unknown"),
                         "active": item.name == current_project
                     })
@@ -597,7 +632,8 @@ def list_projects() -> str:
     for p in sorted(projects, key=lambda x: x["created"], reverse=True):
         active = " [ACTIVE]" if p["active"] else ""
         result += f"• {p['name']}{active}\n"
-        result += f"  Template: {p['template']}\n"
+        if p['description'] and p['description'] != "No description":
+            result += f"  Description: {p['description']}\n"
         result += f"  Created: {p['created'][:10]}\n\n"
     
     return result.rstrip()
@@ -632,7 +668,8 @@ def use_project(name: str) -> str:
         with open(project_dir / ".project", 'r') as f:
             meta = json.load(f)
         
-        return f"Switched to project '{name}' ({meta.get('template', 'unknown')} template)\nProject directory: {project_dir}"
+        desc = meta.get('description', meta.get('template', 'No description'))
+        return f"Switched to project '{name}'\nDescription: {desc}\nProject directory: {project_dir}"
     except Exception:
         return f"Switched to project '{name}'\nProject directory: {project_dir}"
 
@@ -669,11 +706,11 @@ def project_info() -> str:
         result = f"Current Project: {current_project}\n"
         result += f"{'=' * (len(current_project) + 17)}\n\n"
         result += f"Directory: {project_dir}\n"
-        result += f"Template: {meta.get('template', 'unknown')}\n"
         result += f"Created: {meta.get('created', 'unknown')[:10]}\n"
         
-        if meta.get('description'):
-            result += f"Description: {meta['description']}\n"
+        desc = meta.get('description', meta.get('template', 'No description'))
+        if desc and desc != "No description":
+            result += f"Description: {desc}\n"
         
         if file_counts:
             result += "\nFiles:\n"
@@ -684,6 +721,122 @@ def project_info() -> str:
         
     except Exception as e:
         return f"Project '{current_project}' at {project_dir}\n(Error reading metadata: {str(e)})"
+
+
+@mcp.tool()
+def suggest_document_workflow(user_request: str) -> str:
+    """Analyze user request and suggest appropriate document workflow.
+    
+    This tool helps the AI agent choose the right sequence of operations
+    based on what the user actually wants, not assuming any particular flow.
+    
+    Args:
+        user_request: The user's actual request or document description.
+                     Examples:
+                     - "write meeting notes from today"
+                     - "create a PDF report with charts"
+                     - "print my thesis chapter"
+                     - "help me format this equation"
+                     - "I need a letter to send to the bank"
+    
+    Returns:
+        Workflow recommendation with specific tool sequence
+    """
+    request_lower = user_request.lower()
+    
+    # Detect output intent
+    wants_print = any(word in request_lower for word in ['print', 'printer', 'hard copy'])
+    wants_pdf = any(word in request_lower for word in ['pdf', 'document', 'file'])
+    wants_send = any(word in request_lower for word in ['send', 'email', 'submit', 'share'])
+    
+    # Detect complexity
+    needs_math = any(word in request_lower for word in ['equation', 'formula', 'mathematical', 'integral'])
+    needs_citations = any(word in request_lower for word in ['citation', 'reference', 'bibliography'])
+    needs_graphics = any(word in request_lower for word in ['diagram', 'chart', 'graph', 'figure', 'plot'])
+    is_simple = any(word in request_lower for word in ['notes', 'list', 'quick', 'simple', 'draft'])
+    
+    # Detect document type
+    is_letter = 'letter' in request_lower
+    is_report = any(word in request_lower for word in ['report', 'analysis', 'summary'])
+    is_academic = any(word in request_lower for word in ['paper', 'thesis', 'dissertation', 'journal'])
+    
+    # Build workflow recommendation
+    workflow = []
+    format_choice = "markdown"  # default
+    
+    # Determine format
+    if needs_math or needs_citations or (needs_graphics and is_academic):
+        format_choice = "latex"
+        workflow.append("Format: LaTeX (for mathematical/academic features)")
+    elif is_simple or not (wants_print or wants_pdf):
+        workflow.append("Format: Markdown (simple and fast)")
+    else:
+        workflow.append("Format: Markdown (can upgrade to LaTeX if needed)")
+    
+    # Determine actions based on intent
+    if wants_print and not wants_pdf and not wants_send:
+        # Direct to printer
+        if format_choice == "latex":
+            workflow.extend([
+                "1. Write content with save_latex()",
+                "2. Direct print with print_latex(file_path=...)"
+            ])
+        else:
+            workflow.extend([
+                "1. Create content",
+                "2. Direct print with print_markdown(content=...)",
+                "Note: No need to save unless user wants to keep it"
+            ])
+    
+    elif wants_pdf and not wants_print:
+        # Just create PDF
+        if format_choice == "latex":
+            workflow.extend([
+                "1. Write content with save_latex()",
+                "2. Generate PDF with latex_to_pdf(file_path=...)"
+            ])
+        else:
+            workflow.extend([
+                "1. Write content with save_markdown()",
+                "2. Generate PDF with markdown_to_pdf(file_path=...)"
+            ])
+    
+    elif wants_send or is_letter:
+        # Need a file to send
+        workflow.extend([
+            f"1. Write content with save_{format_choice}()",
+            f"2. Generate PDF with {format_choice}_to_pdf()",
+            "3. User can then attach PDF to email/upload"
+        ])
+    
+    elif not (wants_print or wants_pdf or wants_send):
+        # Just writing/editing
+        workflow.extend([
+            f"1. Write content with save_{format_choice}()",
+            "2. That's it! File saved for future use",
+            "3. Can always generate PDF or print later if needed"
+        ])
+    
+    else:
+        # Multiple outputs wanted
+        workflow.extend([
+            f"1. Write content with save_{format_choice}()",
+            f"2. Generate PDF with {format_choice}_to_pdf() if needed",
+            "3. Print with appropriate print function if needed",
+            "Note: Save first so user has a copy"
+        ])
+    
+    # Add helpful context
+    result = "**Recommended Workflow:**\n\n"
+    result += "\n".join(workflow)
+    
+    if needs_math and format_choice == "markdown":
+        result += "\n\n⚠️ Note: Markdown supports basic math with $...$, but for complex equations consider LaTeX"
+    
+    if is_simple and not (wants_print or wants_pdf):
+        result += "\n\n💡 Tip: For simple notes, just saving as Markdown is perfect. No need to generate PDF unless specifically needed."
+    
+    return result
 
 
 @mcp.tool()
