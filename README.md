@@ -1,8 +1,8 @@
-# CUPS MCP Server
+# TeXFlow
 
-![CUPS MCP Server](cups.png)
+![TeXFlow](docs/img/texflow-banner.png)
 
-A standalone MCP (Model Context Protocol) server that provides complete document creation, editing, and printing capabilities via CUPS on Linux systems.
+A comprehensive document authoring and composition MCP server that provides a complete pipeline for document creation: **Content → Processing → Output**. TeXFlow transforms your ideas into beautifully typeset documents using LaTeX, Markdown, and modern document processing tools.
 
 ## 🚀 Key Innovation: Collaborative Document Editing
 
@@ -15,9 +15,42 @@ This server introduces **collaborative editing capabilities** that prevent confl
 
 ## Core Value Proposition
 
-This server enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities - no specific tools required. Your AI can read, edit, create, validate, and print documents just like a desktop application.
+TeXFlow enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities with **project-based organization**. Your AI assistant becomes a complete document authoring companion that can:
+
+- Create and manage document projects with organized structure
+- Author content in Markdown or LaTeX with proper project context
+- Transform documents through a sophisticated processing pipeline
+- Generate beautiful PDFs with professional typography
+- Print or export documents in various formats
+
+## 🚀 Quick Start with Projects
+
+```python
+# Create a new document project
+create_project("my-paper", "article")
+# Created project 'my-paper' at ~/Documents/TeXFlow/my-paper
+
+# Write content (automatically saved to project)
+save_markdown("# Introduction\n\nThis is my paper.", "intro.md")
+# Markdown saved to project 'my-paper': content/intro.md
+
+# Generate PDF (automatically saved to project/output/pdf/)
+markdown_to_pdf(file_path="intro.md", output_path="intro.pdf")
+# PDF saved to project 'my-paper': output/pdf/intro.pdf
+
+# Switch between projects
+use_project("thesis-2024")
+list_projects()  # See all your document projects
+```
 
 ## Features
+
+### 📁 Project-Based Document Management (NEW!)
+- Create organized document projects with templates (article, thesis, letter)
+- Automatic project structure with content/, output/, and assets/ directories  
+- Switch between projects seamlessly
+- Project-aware file paths for better organization
+- All documents in one project stay together
 
 ### Printing
 - List available CUPS printers with status information
@@ -149,8 +182,8 @@ sudo pacman -S cups pandoc texlive-xetex texlive-fontsrecommended \
                python-weasyprint librsvg
 
 # Clone and install
-git clone https://github.com/aaronsb/cups-mcp
-cd cups-mcp
+git clone https://github.com/aaronsb/texflow-mcp
+cd texflow-mcp
 uv sync
 ```
 
@@ -164,19 +197,19 @@ No installation needed! Just ensure you have `uv` installed and run:
 # Install uv if you haven't already
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Run CUPS MCP directly from GitHub
-uvx --from git+https://github.com/aaronsb/cups-mcp.git cups-mcp
+# Run TeXFlow directly from GitHub
+uvx --from git+https://github.com/aaronsb/texflow-mcp.git texflow
 ```
 
 ### Option 2: Clone and run locally
 
 ```bash
 # Clone the repository
-git clone https://github.com/aaronsb/cups-mcp
-cd cups-mcp
+git clone https://github.com/aaronsb/texflow-mcp
+cd texflow-mcp
 
 # Run the server
-uv run cups-mcp
+uv run texflow
 ```
 
 ## Usage
@@ -202,6 +235,9 @@ For most document workflows, you'll primarily use these tools:
 
 #### Font Discovery (New!)
 - `list_available_fonts` - Find fonts for your LaTeX documents
+
+#### Markdown to LaTeX Conversion (New!)
+- `markdown_to_latex` - Convert Markdown files to editable LaTeX format
 
 See the birthday whitepaper example in `examples/` for a demonstration of advanced LaTeX capabilities including mathematical proofs, TikZ diagrams, and academic formatting.
 
@@ -414,6 +450,36 @@ Print a PDF or Markdown file from the Documents folder.
 - Converts Markdown files to PDF before printing
 - Works with subfolders in Documents
 
+#### `markdown_to_latex`
+Convert a Markdown file to LaTeX format for further customization.
+
+```json
+{
+  "name": "markdown_to_latex",
+  "arguments": {
+    "file_path": "research_notes.md",  // Path to markdown file
+    "output_path": "research_paper.tex",  // Optional: output path
+    "title": "My Research Paper",  // Optional: document title
+    "standalone": true  // Optional: create complete document (default: true)
+  }
+}
+```
+
+**Features:**
+- Converts Markdown to editable LaTeX format
+- Preserves math expressions, tables, and formatting
+- Adds conversion metadata as comments
+- Allows fine-tuning before final PDF compilation
+- Part of the markdown → LaTeX → PDF workflow
+
+**Workflow example:**
+```bash
+1. save_markdown(content="...", filename="notes.md")
+2. markdown_to_latex(file_path="notes.md")  # Creates notes.tex
+3. edit_document(file_path="notes.tex", ...)  # Optional: customize
+4. latex_to_pdf(file_path="notes.tex", output_path="final.pdf")
+```
+
 #### `list_available_fonts`
 List fonts available for use with XeLaTeX documents.
 
@@ -557,9 +623,9 @@ Add to your Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "cups-mcp": {
+    "texflow": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/aaronsb/cups-mcp.git", "cups-mcp"]
+      "args": ["--from", "git+https://github.com/aaronsb/texflow-mcp.git", "texflow"]
     }
   }
 }
@@ -568,7 +634,7 @@ Add to your Claude Desktop config:
 Or use the Claude CLI:
 
 ```bash
-claude mcp add cups-mcp uvx -- --from git+https://github.com/aaronsb/cups-mcp.git cups-mcp
+claude mcp add texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow
 ```
 
 ### Method 2: Run from local directory
@@ -578,9 +644,9 @@ If you've cloned the repository:
 ```json
 {
   "mcpServers": {
-    "cups-mcp": {
+    "texflow": {
       "command": "uv",
-      "args": ["--directory", "/path/to/cups-mcp", "run", "cups-mcp"]
+      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow"]
     }
   }
 }
@@ -665,7 +731,7 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 
 ## Documentation
 
-- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 20 tools
+- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 21 tools
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
 

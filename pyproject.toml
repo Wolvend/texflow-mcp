@@ -1,7 +1,7 @@
 [project]
-name = "cups-mcp"
-version = "0.1.0"
-description = "MCP server for printing documents via CUPS on Linux"
+name = "texflow"
+version = "0.2.0"
+description = "TeXFlow - A document authoring and composition MCP server"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -12,4 +12,4 @@ dependencies = [
 ]
 
 [project.scripts]
-cups-mcp = "cups_mcp:main"
+texflow = "texflow:main"

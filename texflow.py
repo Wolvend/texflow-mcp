@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""CUPS MCP Server - Print documents via CUPS on Linux."""
+"""TeXFlow - A document authoring and composition MCP server.
+
+TeXFlow provides a complete pipeline for document creation:
+Content (text/markdown/LaTeX) → Processing (TeX/PDF) → Output (print/save)
+"""
 
 import os
 import subprocess
@@ -8,13 +12,99 @@ import shutil
 import hashlib
 import difflib
 import re
+import json
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
 
 import cups
 import magic
+
+
+# TeXFlow Configuration
+TEXFLOW_CONFIG_DIR = Path.home() / ".config" / "texflow"
+TEXFLOW_CONFIG_FILE = TEXFLOW_CONFIG_DIR / "config.json"
+DEFAULT_PROJECT_BASE = "TeXFlow"  # Under ~/Documents/TeXFlow/
+
+# Global state for current project
+current_project = None
+project_config = {}
+
+
+def load_texflow_config() -> dict:
+    """Load TeXFlow configuration from ~/.config/texflow/config.json"""
+    if TEXFLOW_CONFIG_FILE.exists():
+        try:
+            with open(TEXFLOW_CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "project_base": DEFAULT_PROJECT_BASE,
+        "active_project": None,
+        "default_template": "article"
+    }
+
+
+def save_texflow_config(config: dict) -> None:
+    """Save TeXFlow configuration"""
+    TEXFLOW_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(TEXFLOW_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+
+def get_project_base() -> Path:
+    """Get the base directory for all TeXFlow projects"""
+    config = load_texflow_config()
+    base_name = config.get("project_base", DEFAULT_PROJECT_BASE)
+    return Path.home() / "Documents" / base_name
+
+
+def resolve_project_path(file_path: str, create_dirs: bool = True) -> Path:
+    """Resolve a file path within the current project context.
+    
+    Args:
+        file_path: The file path to resolve
+        create_dirs: Whether to create parent directories if they don't exist
+        
+    Returns:
+        Resolved absolute path
+    """
+    path = Path(file_path)
+    
+    # If absolute path, return as-is
+    if path.is_absolute():
+        return path
+    
+    # If starts with ~, expand and return
+    if str(file_path).startswith("~"):
+        return Path(file_path).expanduser()
+    
+    # If we have an active project, resolve within it
+    if current_project:
+        project_dir = get_project_base() / current_project
+        
+        # If it's a simple filename, put in project root
+        if "/" not in str(file_path):
+            resolved = project_dir / file_path
+        else:
+            # Relative path within project
+            resolved = project_dir / file_path
+            
+        # Create parent directories if requested
+        if create_dirs:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            
+        return resolved
+    
+    # No active project - use Documents folder as before
+    documents_dir = Path.home() / "Documents"
+    if "/" not in str(file_path):
+        return documents_dir / file_path
+    else:
+        return documents_dir / file_path
 
 
 def detect_distro() -> str:
@@ -212,10 +302,17 @@ DEPENDENCIES = {
 }
 
 # Initialize FastMCP server  
-mcp = FastMCP("cups-mcp")
+mcp = FastMCP("texflow")
 
-# Log distribution detection and dependency status at startup
+# Load active project from config
+config = load_texflow_config()
+current_project = config.get("active_project")
+
+# Log startup info
+print(f"TeXFlow - Document Authoring & Composition Server")
 print(f"Detected Linux distribution: {DISTRO}")
+if current_project:
+    print(f"Active project: {current_project}")
 
 missing_deps = []
 for dep, info in DEPENDENCIES.items():
@@ -395,6 +492,198 @@ def update_printer_info(printer_name: str, description: Optional[str] = None, lo
         return result
     except Exception as e:
         return f"Failed to update printer: {str(e)}"
+
+
+# Project Management Tools
+@mcp.tool()
+def create_project(name: str, template: Optional[str] = "basic") -> str:
+    """Create a new TeXFlow project with organized structure.
+    
+    Args:
+        name: Project name (will be created under ~/Documents/TeXFlow/)
+        template: Project template - 'basic', 'article', 'thesis', 'letter'
+    
+    Returns:
+        Success message with project path, or error description
+    """
+    global current_project
+    
+    # Validate project name
+    if not name or "/" in name:
+        return "Error: Project name must be non-empty and cannot contain slashes"
+    
+    project_base = get_project_base()
+    project_dir = project_base / name
+    
+    if project_dir.exists():
+        return f"Error: Project '{name}' already exists at {project_dir}"
+    
+    try:
+        # Create project structure
+        project_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create subdirectories based on template
+        if template in ["article", "thesis"]:
+            (project_dir / "content").mkdir()
+            (project_dir / "output").mkdir()
+            (project_dir / "output" / "pdf").mkdir()
+            (project_dir / "output" / "tex").mkdir()
+            (project_dir / "assets").mkdir()
+            (project_dir / "assets" / "images").mkdir()
+            (project_dir / "assets" / "data").mkdir()
+            
+            if template == "thesis":
+                (project_dir / "content" / "chapters").mkdir()
+                (project_dir / "content" / "appendices").mkdir()
+                (project_dir / "references").mkdir()
+        else:
+            # Basic template
+            (project_dir / "output").mkdir()
+        
+        # Create project metadata
+        project_meta = {
+            "name": name,
+            "template": template,
+            "created": datetime.now().isoformat(),
+            "description": ""
+        }
+        
+        with open(project_dir / ".project", 'w') as f:
+            json.dump(project_meta, f, indent=2)
+        
+        # Set as active project
+        current_project = name
+        config = load_texflow_config()
+        config["active_project"] = name
+        save_texflow_config(config)
+        
+        return f"Created project '{name}' at {project_dir}\nProject is now active."
+        
+    except Exception as e:
+        return f"Failed to create project: {str(e)}"
+
+
+@mcp.tool()
+def list_projects() -> str:
+    """List all TeXFlow projects.
+    
+    Returns:
+        List of projects with their metadata
+    """
+    project_base = get_project_base()
+    
+    if not project_base.exists():
+        return "No projects found. Create your first project with create_project()."
+    
+    projects = []
+    for item in project_base.iterdir():
+        if item.is_dir() and (item / ".project").exists():
+            try:
+                with open(item / ".project", 'r') as f:
+                    meta = json.load(f)
+                    projects.append({
+                        "name": item.name,
+                        "template": meta.get("template", "unknown"),
+                        "created": meta.get("created", "unknown"),
+                        "active": item.name == current_project
+                    })
+            except Exception:
+                pass
+    
+    if not projects:
+        return "No projects found. Create your first project with create_project()."
+    
+    result = f"TeXFlow Projects (in {project_base}):\n\n"
+    for p in sorted(projects, key=lambda x: x["created"], reverse=True):
+        active = " [ACTIVE]" if p["active"] else ""
+        result += f"• {p['name']}{active}\n"
+        result += f"  Template: {p['template']}\n"
+        result += f"  Created: {p['created'][:10]}\n\n"
+    
+    return result.rstrip()
+
+
+@mcp.tool()
+def use_project(name: str) -> str:
+    """Switch to a different TeXFlow project.
+    
+    Args:
+        name: Project name to switch to
+        
+    Returns:
+        Success message or error
+    """
+    global current_project
+    
+    project_base = get_project_base()
+    project_dir = project_base / name
+    
+    if not project_dir.exists() or not (project_dir / ".project").exists():
+        return f"Error: Project '{name}' not found"
+    
+    # Set as active project
+    current_project = name
+    config = load_texflow_config()
+    config["active_project"] = name
+    save_texflow_config(config)
+    
+    # Get project info
+    try:
+        with open(project_dir / ".project", 'r') as f:
+            meta = json.load(f)
+        
+        return f"Switched to project '{name}' ({meta.get('template', 'unknown')} template)\nProject directory: {project_dir}"
+    except Exception:
+        return f"Switched to project '{name}'\nProject directory: {project_dir}"
+
+
+@mcp.tool()
+def project_info() -> str:
+    """Show information about the current project.
+    
+    Returns:
+        Current project details or prompt to create/select one
+    """
+    if not current_project:
+        return ("No active project. Use one of:\n"
+                "• create_project(name, template) - Create new project\n"
+                "• use_project(name) - Switch to existing project\n"
+                "• list_projects() - See all projects")
+    
+    project_dir = get_project_base() / current_project
+    
+    if not project_dir.exists():
+        return f"Error: Active project '{current_project}' directory not found"
+    
+    try:
+        with open(project_dir / ".project", 'r') as f:
+            meta = json.load(f)
+        
+        # Count files
+        file_counts = {}
+        for ext in ['.md', '.tex', '.pdf']:
+            count = len(list(project_dir.rglob(f'*{ext}')))
+            if count > 0:
+                file_counts[ext] = count
+        
+        result = f"Current Project: {current_project}\n"
+        result += f"{'=' * (len(current_project) + 17)}\n\n"
+        result += f"Directory: {project_dir}\n"
+        result += f"Template: {meta.get('template', 'unknown')}\n"
+        result += f"Created: {meta.get('created', 'unknown')[:10]}\n"
+        
+        if meta.get('description'):
+            result += f"Description: {meta['description']}\n"
+        
+        if file_counts:
+            result += "\nFiles:\n"
+            for ext, count in file_counts.items():
+                result += f"  {ext}: {count} file(s)\n"
+        
+        return result
+        
+    except Exception as e:
+        return f"Project '{current_project}' at {project_dir}\n(Error reading metadata: {str(e)})"
 
 
 @mcp.tool()
@@ -682,6 +971,8 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
     def markdown_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
         """Convert markdown content to PDF and save to specified path.
         
+        Uses the active project if one is set. PDFs are saved to project/output/pdf/.
+        
         This is useful for generating PDFs without printing them, or for systems
         without a PDF printer configured.
         
@@ -695,8 +986,9 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
             content: Markdown content to convert (optional if file_path is provided)
             file_path: Path to Markdown file to convert (optional if content is provided)
             output_path: Path where PDF should be saved. Can be:
+                - Simple name: report.pdf (saves to project/output/pdf/ or ~/Documents/)
+                - Relative path: final/report.pdf (relative to project)
                 - Full path: /home/user/Documents/file.pdf
-                - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
                 - With ~: ~/Downloads/file.pdf
             title: Document title (optional)
         """
@@ -721,15 +1013,8 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         
         # Handle file_path input
         if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
+            # Use project path resolution for input file
+            path = resolve_project_path(file_path, create_dirs=False)
             
             if not path.exists():
                 return f"File not found: {path}"
@@ -740,30 +1025,27 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
             except Exception as e:
                 return f"Failed to read file: {str(e)}"
         
-        # Handle output path expansion
-        output_path = str(Path(output_path).expanduser())
+        # Handle output path with project resolution
+        output_path = resolve_project_path(output_path, create_dirs=True)
         
-        # If no directory specified, default to Documents folder
-        if "/" not in output_path:
-            documents_dir = Path.home() / "Documents"
-            try:
-                documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
-            except Exception as e:
-                return f"Failed to create Documents directory: {str(e)}"
-            output_path = str(documents_dir / output_path)
+        # If we have a project and it's a simple filename, put in output/pdf folder
+        if current_project and "/" not in str(output_path.name) and not str(output_path).startswith("~"):
+            output_dir = get_project_base() / current_project / "output" / "pdf"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / output_path.name
         
         # Ensure output path ends with .pdf
-        if not output_path.endswith('.pdf'):
-            output_path += '.pdf'
+        if not str(output_path).endswith('.pdf'):
+            output_path = Path(str(output_path) + '.pdf')
         
         # Check if file already exists
-        if Path(output_path).exists():
+        if output_path.exists():
             # Generate unique filename
-            base = Path(output_path).stem
-            dir_path = Path(output_path).parent
+            base = output_path.stem
+            dir_path = output_path.parent
             counter = 1
-            while Path(output_path).exists():
-                output_path = str(dir_path / f"{base}_{counter}.pdf")
+            while output_path.exists():
+                output_path = dir_path / f"{base}_{counter}.pdf"
                 counter += 1
         
         # Create temporary markdown file
@@ -775,7 +1057,7 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
             # Run pandoc
             pandoc_cmd = [
                 "pandoc", md_path,
-                "-o", output_path,
+                "-o", str(output_path),
                 "--metadata", f"title={title}",
                 "--pdf-engine=xelatex",
                 "-V", "geometry:margin=1in",
@@ -789,10 +1071,15 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
                 return f"PDF conversion failed: {result.stderr}"
             
             # Verify file was created
-            if not Path(output_path).exists():
+            if not output_path.exists():
                 return f"PDF generation failed - file was not created at {output_path}"
             
-            return f"PDF saved successfully to: {output_path}"
+            # Show project-relative path if in a project
+            if current_project and str(output_path).startswith(str(get_project_base())):
+                rel_path = output_path.relative_to(get_project_base() / current_project)
+                return f"PDF saved to project '{current_project}': {rel_path}"
+            else:
+                return f"PDF saved successfully to: {output_path}"
         except PermissionError:
             return f"Permission denied: Cannot write to {output_path}"
         except Exception as e:
@@ -949,37 +1236,37 @@ else:
 def save_markdown(content: str, filename: str) -> str:
     """Save markdown content to a file.
     
+    Saves to the active project if one is set, otherwise to Documents folder.
+    
     Args:
         content: Markdown content to save
         filename: Filename to save. Can be:
-            - Simple name: document.md (saves to ~/Documents/document.md)
+            - Simple name: document.md (saves to project/content/ or ~/Documents/)
+            - Relative path: drafts/chapter1.md (relative to project)
             - Full path: /home/user/Documents/document.md
             - With ~: ~/Downloads/document.md
     """
-    # Handle path expansion
-    output_path = str(Path(filename).expanduser())
+    # Use project path resolution
+    output_path = resolve_project_path(filename, create_dirs=True)
     
-    # If no directory specified, default to Documents folder
-    if "/" not in output_path:
-        documents_dir = Path.home() / "Documents"
-        try:
-            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
-        except Exception as e:
-            return f"Failed to create Documents directory: {str(e)}"
-        output_path = str(documents_dir / output_path)
+    # If we have a project and it's a simple filename, put in content folder
+    if current_project and "/" not in filename and not filename.startswith("~") and not Path(filename).is_absolute():
+        content_dir = output_path.parent / "content"
+        content_dir.mkdir(exist_ok=True)
+        output_path = content_dir / output_path.name
     
     # Ensure output path ends with .md
-    if not output_path.endswith('.md'):
-        output_path += '.md'
+    if not str(output_path).endswith('.md'):
+        output_path = Path(str(output_path) + '.md')
     
     # Check if file already exists
-    if Path(output_path).exists():
+    if output_path.exists():
         # Generate unique filename
-        base = Path(output_path).stem
-        dir_path = Path(output_path).parent
+        base = output_path.stem
+        dir_path = output_path.parent
         counter = 1
-        while Path(output_path).exists():
-            output_path = str(dir_path / f"{base}_{counter}.md")
+        while output_path.exists():
+            output_path = dir_path / f"{base}_{counter}.md"
             counter += 1
     
     try:
@@ -987,7 +1274,12 @@ def save_markdown(content: str, filename: str) -> str:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        return f"Markdown saved successfully to: {output_path}"
+        # Show project-relative path if in a project
+        if current_project and str(output_path).startswith(str(get_project_base())):
+            rel_path = output_path.relative_to(get_project_base() / current_project)
+            return f"Markdown saved to project '{current_project}': {rel_path}"
+        else:
+            return f"Markdown saved successfully to: {output_path}"
     except PermissionError:
         return f"Permission denied: Cannot write to {output_path}"
     except Exception as e:
@@ -1196,6 +1488,8 @@ def validate_latex(content: str) -> str:
 def save_latex(content: str, filename: str) -> str:
     """Save LaTeX content to a .tex file.
     
+    Saves to the active project if one is set, otherwise to Documents folder.
+    
     After saving, you can:
     - Convert to PDF: Use latex_to_pdf with file_path=<saved_file>
     - Print: Use print_latex with file_path=<saved_file>
@@ -1206,34 +1500,32 @@ def save_latex(content: str, filename: str) -> str:
     Args:
         content: LaTeX content to save
         filename: Filename to save. Can be:
-            - Simple name: document.tex (saves to ~/Documents/document.tex)
+            - Simple name: document.tex (saves to project/content/ or ~/Documents/)
+            - Relative path: chapters/intro.tex (relative to project)
             - Full path: /home/user/Documents/document.tex
             - With ~: ~/Downloads/document.tex
     """
-    # Handle path expansion
-    output_path = str(Path(filename).expanduser())
+    # Use project path resolution
+    output_path = resolve_project_path(filename, create_dirs=True)
     
-    # If no directory specified, default to Documents folder
-    if "/" not in output_path:
-        documents_dir = Path.home() / "Documents"
-        try:
-            documents_dir.mkdir(exist_ok=True)  # Create if doesn't exist
-        except Exception as e:
-            return f"Failed to create Documents directory: {str(e)}"
-        output_path = str(documents_dir / output_path)
+    # If we have a project and it's a simple filename, put in content folder
+    if current_project and "/" not in filename and not filename.startswith("~") and not Path(filename).is_absolute():
+        content_dir = output_path.parent / "content"
+        content_dir.mkdir(exist_ok=True)
+        output_path = content_dir / output_path.name
     
     # Ensure output path ends with .tex
-    if not output_path.endswith('.tex'):
-        output_path += '.tex'
+    if not str(output_path).endswith('.tex'):
+        output_path = Path(str(output_path) + '.tex')
     
     # Check if file already exists
-    if Path(output_path).exists():
+    if output_path.exists():
         # Generate unique filename
-        base = Path(output_path).stem
-        dir_path = Path(output_path).parent
+        base = output_path.stem
+        dir_path = output_path.parent
         counter = 1
-        while Path(output_path).exists():
-            output_path = str(dir_path / f"{base}_{counter}.tex")
+        while output_path.exists():
+            output_path = dir_path / f"{base}_{counter}.tex"
             counter += 1
     
     try:
@@ -1243,10 +1535,15 @@ def save_latex(content: str, filename: str) -> str:
         
         # Track content hash to detect redundant regeneration
         content_hash = hashlib.sha256(content.encode()).hexdigest()
-        saved_file_hashes[content_hash] = output_path
+        saved_file_hashes[content_hash] = str(output_path)
         recent_content_hashes.append(content_hash)
         
-        return f"LaTeX saved successfully to: {output_path}"
+        # Show project-relative path if in a project
+        if current_project and str(output_path).startswith(str(get_project_base())):
+            rel_path = output_path.relative_to(get_project_base() / current_project)
+            return f"LaTeX saved to project '{current_project}': {rel_path}"
+        else:
+            return f"LaTeX saved successfully to: {output_path}"
     except PermissionError:
         return f"Permission denied: Cannot write to {output_path}"
     except Exception as e:
