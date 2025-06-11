@@ -941,15 +941,8 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         
         # Handle file_path input
         if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
+            # Use project-aware path resolution
+            path = resolve_project_path(file_path, create_dirs=False)
             
             if not path.exists():
                 return f"File not found: {path}"
@@ -1072,15 +1065,8 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         
         # Handle file_path input
         if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
+            # Use project-aware path resolution
+            path = resolve_project_path(file_path, create_dirs=False)
             
             if not path.exists():
                 return f"File not found: {path}"
@@ -1569,15 +1555,8 @@ def validate_latex(content: Optional[str] = None, file_path: Optional[str] = Non
     
     # Handle file_path input
     if file_path:
-        # Expand path
-        path = Path(file_path).expanduser()
-        
-        # If no directory specified, check Documents folder
-        if not path.is_absolute() and "/" not in str(file_path):
-            path = Path.home() / "Documents" / file_path
-        elif not path.is_absolute():
-            # Relative path within Documents
-            path = Path.home() / "Documents" / file_path
+        # Use project-aware path resolution
+        path = resolve_project_path(file_path, create_dirs=False)
         
         if not path.exists():
             return f"File not found: {path}"
@@ -1949,18 +1928,27 @@ else:
 
 @mcp.tool()
 def list_documents(folder: str = "") -> str:
-    """List all printable files in Documents folder or subfolder.
+    """List all printable files in project directory or Documents folder.
     
     IMPORTANT for AI agents: Use this tool to find files when the user provides
     partial or approximate filenames. This tool shows ALL file types including
     PDF, Markdown, LaTeX, HTML, SVG, images, and other documents.
     
+    When a project is active, lists files in the project directory.
+    When no project is active, lists files in ~/Documents/.
+    
     Args:
-        folder: Subfolder within Documents (optional, e.g., "reports" for ~/Documents/reports)
+        folder: Subfolder to list (optional, e.g., "reports" or "content")
     """
-    documents_dir = Path.home() / "Documents"
+    # Use project-aware resolution for the base directory
     if folder:
-        documents_dir = documents_dir / folder
+        documents_dir = resolve_project_path(folder, create_dirs=False)
+    else:
+        # If no folder specified, use the project root or Documents
+        if current_project:
+            documents_dir = get_project_base() / current_project
+        else:
+            documents_dir = Path.home() / "Documents"
     
     if not documents_dir.exists():
         return f"Directory not found: {documents_dir}"
@@ -2014,29 +2002,35 @@ def list_documents(folder: str = "") -> str:
 
 @mcp.tool()
 def print_from_documents(filename: str, printer: Optional[str] = None, folder: str = "") -> str:
-    """Print a PDF or Markdown file from Documents folder.
+    """Print a PDF or Markdown file from project directory or Documents folder.
     
     IMPORTANT printer selection logic for AI agents:
     1. First print: Check if default printer exists. If not, ask which printer to use.
     2. Remember the chosen printer for the rest of the session.
     3. Only change printer if user explicitly requests a different one.
     
+    When a project is active, looks for files in the project directory.
+    When no project is active, looks for files in ~/Documents/.
+    
     Args:
         filename: Name of file to print (e.g., "report.pdf" or "notes.md")
         printer: Printer name (optional, uses default if not specified)
-        folder: Subfolder within Documents (optional, e.g., "reports")
+        folder: Subfolder to look in (optional, e.g., "reports" or "output/pdf")
     """
-    documents_dir = Path.home() / "Documents"
+    # Construct the full relative path
     if folder:
-        documents_dir = documents_dir / folder
+        relative_path = f"{folder}/{filename}"
+    else:
+        relative_path = filename
     
-    file_path = documents_dir / filename
+    # Use project-aware resolution
+    file_path = resolve_project_path(relative_path, create_dirs=False)
     
     if not file_path.exists():
         # Try with common extensions if not provided
         if not file_path.suffix:
             for ext in ['.pdf', '.md', '.tex']:
-                test_path = documents_dir / f"{filename}{ext}"
+                test_path = resolve_project_path(f"{relative_path}{ext}", create_dirs=False)
                 if test_path.exists():
                     file_path = test_path
                     break
