@@ -298,6 +298,65 @@ class OrganizerOperation:
         
         return errors
     
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Return capabilities of the organizer operation."""
+        return {
+            "operation": "organizer",
+            "description": "Manage document lifecycle and organization",
+            "actions": {
+                "move": {
+                    "description": "Move documents to different locations",
+                    "required_params": ["source", "destination"],
+                    "optional_params": []
+                },
+                "archive": {
+                    "description": "Archive (soft delete) documents",
+                    "required_params": ["path"],
+                    "optional_params": ["reason"]
+                },
+                "restore": {
+                    "description": "Restore archived documents",
+                    "required_params": ["archive_path"],
+                    "optional_params": ["restore_path"]
+                },
+                "list_archived": {
+                    "description": "List archived documents",
+                    "required_params": [],
+                    "optional_params": ["directory"]
+                },
+                "find_versions": {
+                    "description": "Find all versions of a document",
+                    "required_params": ["filename"],
+                    "optional_params": ["directory"]
+                },
+                "clean": {
+                    "description": "Archive multiple files by pattern",
+                    "required_params": [],
+                    "optional_params": ["directory", "pattern"]
+                },
+                "clean_aux": {
+                    "description": "Clean LaTeX auxiliary files",
+                    "required_params": [],
+                    "optional_params": ["directory"]
+                },
+                "refresh_aux": {
+                    "description": "Update auxiliary file definitions",
+                    "required_params": ["extensions"],
+                    "optional_params": []
+                },
+                "list_aux": {
+                    "description": "List current auxiliary file patterns",
+                    "required_params": [],
+                    "optional_params": []
+                },
+                "batch": {
+                    "description": "Execute multiple operations",
+                    "required_params": ["operations"],
+                    "optional_params": []
+                }
+            }
+        }
+    
     def _move_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Move document to new location."""
         source = Path(params.get("source", "")).expanduser()

@@ -1,2846 +1,545 @@
 #!/usr/bin/env python3
-"""TeXFlow - A document authoring and composition MCP server.
+"""TeXFlow Unified MCP Server - Simple Implementation
 
-TeXFlow provides a complete pipeline for document creation:
-Content (text/markdown/LaTeX) → Processing (TeX/PDF) → Output (print/save)
-
-IMPORTANT GUIDANCE FOR AI AGENTS:
-- Don't assume users know about LaTeX - intelligently escalate formats based on needs
-- Not every document needs to be printed or even converted to PDF
-- Use suggest_document_workflow() when unsure about user intent
-- Default to Markdown for simplicity, upgrade to LaTeX only when features require it
-- Projects are optional - work directly with files for simple tasks
+This server exposes only 7 semantic MCP tools without backward compatibility.
+Each tool provides intelligent guidance for document workflows.
 """
 
 import os
+import sys
 import subprocess
-import tempfile
-import shutil
-import hashlib
-import difflib
-import re
 import json
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
 
 from mcp.server.fastmcp import FastMCP
 
-import cups
-import magic
-
-# Import document manager for organizer functionality
-from src.features.document.document_manager import document_manager
-
-
-# TeXFlow Configuration
-TEXFLOW_CONFIG_DIR = Path.home() / ".config" / "texflow"
-TEXFLOW_CONFIG_FILE = TEXFLOW_CONFIG_DIR / "config.json"
-DEFAULT_PROJECT_BASE = "TeXFlow"  # Under ~/Documents/TeXFlow/
-
-# Global state for current project
-current_project = None
-project_config = {}
-
-
-def load_texflow_config() -> dict:
-    """Load TeXFlow configuration from ~/.config/texflow/config.json"""
-    if TEXFLOW_CONFIG_FILE.exists():
-        try:
-            with open(TEXFLOW_CONFIG_FILE, 'r') as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
-        "project_base": DEFAULT_PROJECT_BASE,
-        "active_project": None,
-        "default_template": "article"
-    }
-
-
-def save_texflow_config(config: dict) -> None:
-    """Save TeXFlow configuration"""
-    TEXFLOW_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(TEXFLOW_CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=2)
-
-
-def get_project_base() -> Path:
-    """Get the base directory for all TeXFlow projects"""
-    config = load_texflow_config()
-    base_name = config.get("project_base", DEFAULT_PROJECT_BASE)
-    return Path.home() / "Documents" / base_name
-
-
-def resolve_project_path(file_path: str, create_dirs: bool = True) -> Path:
-    """Resolve a file path within the current project context or ad-hoc usage.
-    
-    Path resolution order:
-    1. Absolute paths are used as-is
-    2. Paths starting with ~ are expanded
-    3. If a project is active, paths are relative to the project
-    4. Otherwise, paths are relative to ~/Documents
-    
-    This allows flexible usage:
-    - With projects for organized work
-    - Without projects for quick document fixes
-    - With explicit paths for specific locations
-    
-    Args:
-        file_path: The file path to resolve
-        create_dirs: Whether to create parent directories if they don't exist
-        
-    Returns:
-        Resolved absolute path
-    """
-    path = Path(file_path)
-    
-    # If absolute path, return as-is
-    if path.is_absolute():
-        return path
-    
-    # If starts with ~, expand and return
-    if str(file_path).startswith("~"):
-        return Path(file_path).expanduser()
-    
-    # If we have an active project, resolve within it
-    if current_project:
-        project_dir = get_project_base() / current_project
-        
-        # If it's a simple filename, put in project root
-        if "/" not in str(file_path):
-            resolved = project_dir / file_path
-        else:
-            # Relative path within project
-            resolved = project_dir / file_path
-            
-        # Create parent directories if requested
-        if create_dirs:
-            resolved.parent.mkdir(parents=True, exist_ok=True)
-            
-        return resolved
-    
-    # No active project - use Documents folder as fallback
-    # This enables ad-hoc usage without requiring a project
-    documents_dir = Path.home() / "Documents"
-    if "/" not in str(file_path):
-        resolved = documents_dir / file_path
-    else:
-        resolved = documents_dir / file_path
-        
-    # Create parent directories if requested
-    if create_dirs and not resolved.parent.exists():
-        resolved.parent.mkdir(parents=True, exist_ok=True)
-        
-    return resolved
-
-
-def detect_distro() -> str:
-    """Detect the Linux distribution."""
-    # Try to read /etc/os-release first (standard for most modern distros)
-    if os.path.exists('/etc/os-release'):
-        with open('/etc/os-release', 'r') as f:
-            content = f.read().lower()
-            if 'arch' in content:
-                return 'arch'
-            elif 'debian' in content or 'ubuntu' in content:
-                return 'debian'
-            elif 'fedora' in content or 'rhel' in content or 'centos' in content:
-                return 'redhat'
-    
-    # Fallback checks
-    if os.path.exists('/etc/arch-release'):
-        return 'arch'
-    elif os.path.exists('/etc/debian_version'):
-        return 'debian'
-    elif os.path.exists('/etc/redhat-release'):
-        return 'redhat'
-    
-    return 'unknown'
-
-
-def check_arch_package(package: str) -> bool:
-    """Check if a package is installed on Arch Linux using pacman."""
-    try:
-        result = subprocess.run(
-            ["pacman", "-Qi", package],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
-        )
-        return result.returncode == 0
-    except:
-        return False
-
-
-def check_debian_package(package: str) -> bool:
-    """Check if a package is installed on Debian/Ubuntu using dpkg."""
-    try:
-        result = subprocess.run(
-            ["dpkg", "-l", package],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True
-        )
-        if result.returncode == 0:
-            # Check if package is actually installed (ii status)
-            for line in result.stdout.split('\n'):
-                if line.startswith('ii') and package in line:
-                    return True
-        return False
-    except:
-        return False
-
-
-def check_redhat_package(package: str) -> bool:
-    """Check if a package is installed on Fedora/RHEL using rpm."""
-    try:
-        result = subprocess.run(
-            ["rpm", "-q", package],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
-        )
-        return result.returncode == 0
-    except:
-        return False
-
-
-def check_package_installed(packages: dict) -> bool:
-    """Check if a package is installed based on the distribution.
-    
-    Args:
-        packages: Dict mapping distro names to package names
-    Returns:
-        True if package is installed, False otherwise
-    """
-    distro = detect_distro()
-    
-    if distro == 'arch' and 'arch' in packages:
-        return check_arch_package(packages['arch'])
-    elif distro == 'debian' and 'debian' in packages:
-        return check_debian_package(packages['debian'])
-    elif distro == 'redhat' and 'redhat' in packages:
-        return check_redhat_package(packages['redhat'])
-    
-    # Fallback to command check if distro detection fails
-    return False
-
-
-# Check for system dependencies
-def check_command(cmd: str) -> bool:
-    """Check if a command is available in PATH."""
-    return shutil.which(cmd) is not None
-
-
-# Check for LaTeX fonts
-def check_latex_fonts() -> bool:
-    """Check if essential LaTeX fonts are available."""
-    try:
-        # Try to find Latin Modern Roman font (essential for XeLaTeX)
-        result = subprocess.run(
-            ["kpsewhich", "lmroman10-regular.otf"],
-            capture_output=True,
-            text=True
-        )
-        return result.returncode == 0
-    except:
-        return False
-
-
-# Detect distribution for better dependency checking
-DISTRO = detect_distro()
-
-# Package mappings for different distributions
-PACKAGE_MAPPINGS = {
-    "pandoc": {
-        "arch": "pandoc-cli",  # On Arch, pandoc-cli provides pandoc
-        "debian": "pandoc",
-        "redhat": "pandoc"
-    },
-    "xelatex": {
-        "arch": "texlive-bin",  # XeLaTeX is in texlive-bin on Arch
-        "debian": "texlive-xetex",
-        "redhat": "texlive-xetex"
-    },
-    "latex_fonts": {
-        "arch": "texlive-fontsrecommended",
-        "debian": "texlive-fonts-recommended",
-        "redhat": "texlive-collection-fontsrecommended"
-    },
-    "weasyprint": {
-        "arch": "python-weasyprint",
-        "debian": "weasyprint",
-        "redhat": "weasyprint"
-    },
-    "rsvg": {
-        "arch": "librsvg",
-        "debian": "librsvg2-bin",
-        "redhat": "librsvg2-tools"
-    },
-    "tikz": {
-        "arch": "texlive-pictures",
-        "debian": "texlive-pictures",
-        "redhat": "texlive-collection-pictures"
-    }
-}
-
-def get_install_command(packages: dict) -> str:
-    """Get the install command for the current distribution."""
-    if DISTRO == 'arch':
-        return f"sudo pacman -S {packages.get('arch', 'PACKAGE_NAME')}"
-    elif DISTRO == 'debian':
-        return f"sudo apt install {packages.get('debian', 'PACKAGE_NAME')}"
-    elif DISTRO == 'redhat':
-        return f"sudo dnf install {packages.get('redhat', 'PACKAGE_NAME')}"
-    else:
-        # Fallback to showing all options
-        return f"Install with: apt install {packages.get('debian', 'PACKAGE')}, dnf install {packages.get('redhat', 'PACKAGE')}, or pacman -S {packages.get('arch', 'PACKAGE')}"
-
-# Dependency checks
-DEPENDENCIES = {
-    "pandoc": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["pandoc"]) or check_command("pandoc"),
-        "description": "pandoc (for markdown to PDF conversion)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["pandoc"])
-    },
-    "xelatex": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["xelatex"]) or check_command("xelatex"),
-        "description": "XeLaTeX (for PDF generation from pandoc)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["xelatex"])
-    },
-    "latex_fonts": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["latex_fonts"]) or check_latex_fonts(),
-        "description": "LaTeX fonts (Latin Modern, etc.)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["latex_fonts"])
-    },
-    "weasyprint": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["weasyprint"]) or check_command("weasyprint"),
-        "description": "WeasyPrint (for HTML to PDF conversion)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["weasyprint"])
-    },
-    "rsvg-convert": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["rsvg"]) or check_command("rsvg-convert"),
-        "description": "rsvg-convert (for SVG to PDF conversion)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["rsvg"])
-    },
-    "tikz": {
-        "available": check_package_installed(PACKAGE_MAPPINGS["tikz"]),
-        "description": "TikZ package (for LaTeX diagrams and graphics)",
-        "install_hint": get_install_command(PACKAGE_MAPPINGS["tikz"])
-    }
-}
-
-# Initialize FastMCP server  
+# Create MCP server instance
 mcp = FastMCP("texflow")
 
-# Load active project from config
-config = load_texflow_config()
-current_project = config.get("active_project")
-
-# Log startup info
-print(f"TeXFlow - Document Authoring & Composition Server")
-print(f"Detected Linux distribution: {DISTRO}")
-if current_project:
-    print(f"Active project: {current_project}")
-
-missing_deps = []
-for dep, info in DEPENDENCIES.items():
-    if not info["available"]:
-        missing_deps.append(f"- {info['description']}: {info['install_hint']}")
-
-if missing_deps:
-    print(f"Warning: Some optional dependencies are missing:")
-    for dep in missing_deps:
-        print(dep)
-    print("Some features may be unavailable.")
-
-
-def get_available_printers() -> List[Dict[str, Any]]:
-    """Get list of available CUPS printers."""
-    conn = cups.Connection()
-    printers = conn.getPrinters()
-    return [
-        {
-            "name": name,
-            "info": attrs.get("printer-info", ""),
-            "location": attrs.get("printer-location", ""),
-            "state": attrs.get("printer-state", 0),
-            "is_default": conn.getDefault() == name,
-        }
-        for name, attrs in printers.items()
-    ]
+# Global state for session context
+SESSION_CONTEXT = {
+    "current_project": None,
+    "default_printer": None,
+    "last_used_format": None
+}
 
 
 @mcp.tool()
-def list_printers() -> str:
-    """List all available CUPS printers."""
-    printers = get_available_printers()
-    if not printers:
-        return "No printers found."
+def document(
+    action: str,
+    content: Optional[str] = None,
+    path: Optional[str] = None,
+    format: str = "auto",
+    intent: Optional[str] = None,
+    source: Optional[str] = None,
+    target_format: Optional[str] = None,
+    old_string: Optional[str] = None,
+    new_string: Optional[str] = None
+) -> str:
+    """Manage document lifecycle - create, read, edit, convert, validate, and track changes.
     
-    result = "Available printers:\n"
-    for p in printers:
-        default = " (default)" if p["is_default"] else ""
-        state = "ready" if p["state"] == 3 else "not ready"
-        result += f"- {p['name']}{default} - {p['info']} [{state}]\n"
+    BEST PRACTICES:
+    - Use 'convert' action to transform existing documents instead of recreating content
+    - Use 'status' to check for external changes before editing
+    - Use 'validate' before generating PDFs from LaTeX
     
-    return result
-
-
-@mcp.tool()
-def get_printer_info(printer_name: str) -> str:
-    """Get detailed information about a specific printer.
-    
-    Args:
-        printer_name: Name of the printer to get info for
+    Actions:
+    - create: Create new document (auto-detects format from content/intent)
+    - read: Read document with line numbers
+    - edit: Make targeted edits with conflict detection
+    - convert: Transform between formats (e.g., markdown→latex)
+    - validate: Check syntax and structure
+    - status: Check for external modifications
     """
-    conn = cups.Connection()
-    printers = conn.getPrinters()
-    
-    if printer_name not in printers:
-        return f"Printer '{printer_name}' not found."
-    
-    attrs = printers[printer_name]
-    is_default = conn.getDefault() == printer_name
-    
-    # Format state information
-    state_map = {
-        3: "idle/ready",
-        4: "printing", 
-        5: "stopped"
-    }
-    state = state_map.get(attrs.get("printer-state", 0), "unknown")
-    
-    result = f"Printer: {printer_name}\n"
-    result += f"{'=' * (len(printer_name) + 9)}\n\n"
-    
-    result += f"Status: {state}\n"
-    result += f"Default printer: {'Yes' if is_default else 'No'}\n"
-    result += f"Info: {attrs.get('printer-info', 'N/A')}\n"
-    result += f"Location: {attrs.get('printer-location', 'N/A')}\n"
-    result += f"Make and Model: {attrs.get('printer-make-and-model', 'N/A')}\n"
-    result += f"State Message: {attrs.get('printer-state-message', 'N/A')}\n"
-    result += f"State Reasons: {attrs.get('printer-state-reasons', 'N/A')}\n"
-    result += f"Shared: {'Yes' if attrs.get('printer-is-shared') else 'No'}\n"
-    result += f"Device URI: {attrs.get('device-uri', 'N/A')}\n"
-    result += f"Printer URI: {attrs.get('printer-uri-supported', 'N/A')}\n"
-    result += f"Type: {attrs.get('printer-type', 'N/A')}\n"
-    
-    return result
-
-
-@mcp.tool()
-def set_default_printer(printer_name: str) -> str:
-    """Set a printer as the default printer.
-    
-    Args:
-        printer_name: Name of the printer to set as default
-    """
-    try:
-        conn = cups.Connection()
-        printers = conn.getPrinters()
-        
-        if printer_name not in printers:
-            return f"Printer '{printer_name}' not found."
-        
-        conn.setDefault(printer_name)
-        return f"Successfully set '{printer_name}' as the default printer."
-    except Exception as e:
-        return f"Failed to set default printer: {str(e)}"
-
-
-@mcp.tool()
-def enable_printer(printer_name: str) -> str:
-    """Enable a printer (allow it to accept jobs).
-    
-    Args:
-        printer_name: Name of the printer to enable
-    """
-    try:
-        conn = cups.Connection()
-        printers = conn.getPrinters()
-        
-        if printer_name not in printers:
-            return f"Printer '{printer_name}' not found."
-        
-        conn.enablePrinter(printer_name)
-        return f"Successfully enabled printer '{printer_name}'."
-    except Exception as e:
-        return f"Failed to enable printer: {str(e)}"
-
-
-@mcp.tool()
-def disable_printer(printer_name: str) -> str:
-    """Disable a printer (stop accepting new jobs).
-    
-    Args:
-        printer_name: Name of the printer to disable
-    """
-    try:
-        conn = cups.Connection()
-        printers = conn.getPrinters()
-        
-        if printer_name not in printers:
-            return f"Printer '{printer_name}' not found."
-        
-        conn.disablePrinter(printer_name)
-        return f"Successfully disabled printer '{printer_name}'."
-    except Exception as e:
-        return f"Failed to disable printer: {str(e)}"
-
-
-@mcp.tool()
-def update_printer_info(printer_name: str, description: Optional[str] = None, location: Optional[str] = None) -> str:
-    """Update printer description and/or location.
-    
-    Args:
-        printer_name: Name of the printer to update
-        description: New printer description/info (optional)
-        location: New printer location (optional)
-    """
-    try:
-        conn = cups.Connection()
-        printers = conn.getPrinters()
-        
-        if printer_name not in printers:
-            return f"Printer '{printer_name}' not found."
-        
-        result = f"Updated printer '{printer_name}':\n"
-        
-        if description is not None:
-            conn.setPrinterInfo(printer_name, description)
-            result += f"  Description: {description}\n"
-        
-        if location is not None:
-            conn.setPrinterLocation(printer_name, location)
-            result += f"  Location: {location}\n"
-        
-        if description is None and location is None:
-            return "No updates specified. Provide description and/or location."
-        
-        return result
-    except Exception as e:
-        return f"Failed to update printer: {str(e)}"
-
-
-# Project Management Tools
-@mcp.tool()
-def create_project(name: str, description: Optional[str] = None) -> str:
-    """Create a new TeXFlow project with AI-guided structure.
-    
-    This tool creates a project directory and lets the calling AI decide what
-    structure to create based on the description. The AI agent can interpret
-    user intent and create appropriate directories.
-    
-    Args:
-        name: Project name (will be created under ~/Documents/TeXFlow/)
-        description: Free-form description of the project type and needs.
-                    Examples:
-                    - "academic paper with literature review and data analysis"
-                    - "book with multiple chapters and illustrations"
-                    - "collection of technical documentation"
-                    - "minimal" or None for blank project
-    
-    Returns:
-        Project creation details and suggested structure
-    """
-    global current_project
-    
-    # Validate project name
-    if not name or "/" in name:
-        return "Error: Project name must be non-empty and cannot contain slashes"
-    
-    project_base = get_project_base()
-    project_dir = project_base / name
-    
-    if project_dir.exists():
-        return f"Error: Project '{name}' already exists at {project_dir}"
-    
-    try:
-        # Create base project directory
-        project_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Always create output directory for generated files
-        (project_dir / "output").mkdir()
-        
-        # Create project metadata
-        project_meta = {
-            "name": name,
-            "description": description or "No description provided",
-            "created": datetime.now().isoformat(),
-            "structure": "ai-guided"
-        }
-        
-        with open(project_dir / ".project", 'w') as f:
-            json.dump(project_meta, f, indent=2)
-        
-        # Set as active project
-        current_project = name
-        config = load_texflow_config()
-        config["active_project"] = name
-        save_texflow_config(config)
-        
-        # Return guidance for the AI agent
-        response = f"Created project '{name}' at {project_dir}\nProject is now active.\n\n"
-        
-        if description and description.lower() not in ["minimal", "blank", "empty"]:
-            response += "Project structure suggestions based on description:\n"
-            response += f"Description: {description}\n\n"
-            response += "The AI agent can now create appropriate directories such as:\n"
-            response += "- content/ - for source documents\n"
-            response += "- assets/images/ - for figures and graphics\n"
-            response += "- references/ - for bibliography\n"
-            response += "- data/ - for datasets\n"
-            response += "- Any other structure that fits the project needs\n\n"
-            response += "Use standard mkdir commands or create directories as needed when saving files."
-        else:
-            response += "Minimal project created. Directories will be created as needed."
-        
-        return response
-        
-    except Exception as e:
-        return f"Failed to create project: {str(e)}"
-
-
-@mcp.tool()
-def list_projects() -> str:
-    """List all TeXFlow projects.
-    
-    Returns:
-        List of projects with their metadata
-    """
-    project_base = get_project_base()
-    
-    if not project_base.exists():
-        return "No projects found. Create your first project with create_project()."
-    
-    projects = []
-    for item in project_base.iterdir():
-        if item.is_dir() and (item / ".project").exists():
-            try:
-                with open(item / ".project", 'r') as f:
-                    meta = json.load(f)
-                    projects.append({
-                        "name": item.name,
-                        "description": meta.get("description", meta.get("template", "No description")),
-                        "created": meta.get("created", "unknown"),
-                        "active": item.name == current_project
-                    })
-            except Exception:
-                pass
-    
-    if not projects:
-        return "No projects found. Create your first project with create_project()."
-    
-    result = f"TeXFlow Projects (in {project_base}):\n\n"
-    for p in sorted(projects, key=lambda x: x["created"], reverse=True):
-        active = " [ACTIVE]" if p["active"] else ""
-        result += f"• {p['name']}{active}\n"
-        if p['description'] and p['description'] != "No description":
-            result += f"  Description: {p['description']}\n"
-        result += f"  Created: {p['created'][:10]}\n\n"
-    
-    return result.rstrip()
-
-
-@mcp.tool()
-def use_project(name: str) -> str:
-    """Switch to a different TeXFlow project.
-    
-    Args:
-        name: Project name to switch to
-        
-    Returns:
-        Success message or error
-    """
-    global current_project
-    
-    project_base = get_project_base()
-    project_dir = project_base / name
-    
-    if not project_dir.exists() or not (project_dir / ".project").exists():
-        return f"Error: Project '{name}' not found"
-    
-    # Set as active project
-    current_project = name
-    config = load_texflow_config()
-    config["active_project"] = name
-    save_texflow_config(config)
-    
-    # Get project info
-    try:
-        with open(project_dir / ".project", 'r') as f:
-            meta = json.load(f)
-        
-        desc = meta.get('description', meta.get('template', 'No description'))
-        return f"Switched to project '{name}'\nDescription: {desc}\nProject directory: {project_dir}"
-    except Exception:
-        return f"Switched to project '{name}'\nProject directory: {project_dir}"
-
-
-@mcp.tool()
-def project_info() -> str:
-    """Show information about the current project.
-    
-    Returns:
-        Current project details or prompt to create/select one
-    """
-    if not current_project:
-        return ("No active project. Use one of:\n"
-                "• create_project(name, template) - Create new project\n"
-                "• use_project(name) - Switch to existing project\n"
-                "• list_projects() - See all projects")
-    
-    project_dir = get_project_base() / current_project
-    
-    if not project_dir.exists():
-        return f"Error: Active project '{current_project}' directory not found"
-    
-    try:
-        with open(project_dir / ".project", 'r') as f:
-            meta = json.load(f)
-        
-        # Count files
-        file_counts = {}
-        for ext in ['.md', '.tex', '.pdf']:
-            count = len(list(project_dir.rglob(f'*{ext}')))
-            if count > 0:
-                file_counts[ext] = count
-        
-        result = f"Current Project: {current_project}\n"
-        result += f"{'=' * (len(current_project) + 17)}\n\n"
-        result += f"Directory: {project_dir}\n"
-        result += f"Created: {meta.get('created', 'unknown')[:10]}\n"
-        
-        desc = meta.get('description', meta.get('template', 'No description'))
-        if desc and desc != "No description":
-            result += f"Description: {desc}\n"
-        
-        if file_counts:
-            result += "\nFiles:\n"
-            for ext, count in file_counts.items():
-                result += f"  {ext}: {count} file(s)\n"
-        
-        return result
-        
-    except Exception as e:
-        return f"Project '{current_project}' at {project_dir}\n(Error reading metadata: {str(e)})"
-
-
-@mcp.tool()
-def close_project() -> str:
-    """Close the current project and return to default Documents mode.
-    
-    After closing a project, all file operations will default to ~/Documents/
-    instead of the project directory.
-    
-    Returns:
-        Success message confirming project closure
-    """
-    global current_project
-    
-    if not current_project:
-        return "No project is currently active."
-    
-    closed_project = current_project
-    current_project = None
-    
-    # Update config file to remove active project
-    config = load_texflow_config()
-    config['active_project'] = None
-    save_texflow_config(config)
-    
-    return f"Closed project '{closed_project}'. File operations will now use ~/Documents/ by default."
-
-
-@mcp.tool()
-def suggest_document_workflow(user_request: str) -> str:
-    """Analyze user request and suggest appropriate document workflow.
-    
-    This tool helps the AI agent choose the right sequence of operations
-    based on what the user actually wants, not assuming any particular flow.
-    
-    Args:
-        user_request: The user's actual request or document description.
-                     Examples:
-                     - "write meeting notes from today"
-                     - "create a PDF report with charts"
-                     - "print my thesis chapter"
-                     - "help me format this equation"
-                     - "I need a letter to send to the bank"
-    
-    Returns:
-        Workflow recommendation with specific tool sequence
-    """
-    request_lower = user_request.lower()
-    
-    # Detect output intent
-    wants_print = any(word in request_lower for word in ['print', 'printer', 'hard copy'])
-    wants_pdf = any(word in request_lower for word in ['pdf', 'document', 'file'])
-    wants_send = any(word in request_lower for word in ['send', 'email', 'submit', 'share'])
-    
-    # Detect complexity
-    needs_math = any(word in request_lower for word in ['equation', 'formula', 'mathematical', 'integral'])
-    needs_citations = any(word in request_lower for word in ['citation', 'reference', 'bibliography'])
-    needs_graphics = any(word in request_lower for word in ['diagram', 'chart', 'graph', 'figure', 'plot'])
-    is_simple = any(word in request_lower for word in ['notes', 'list', 'quick', 'simple', 'draft'])
-    
-    # Detect document type
-    is_letter = 'letter' in request_lower
-    is_report = any(word in request_lower for word in ['report', 'analysis', 'summary'])
-    is_academic = any(word in request_lower for word in ['paper', 'thesis', 'dissertation', 'journal'])
-    
-    # Build workflow recommendation
-    workflow = []
-    format_choice = "markdown"  # default
-    
-    # Determine format
-    if needs_math or needs_citations or (needs_graphics and is_academic):
-        format_choice = "latex"
-        workflow.append("Format: LaTeX (for mathematical/academic features)")
-    elif is_simple or not (wants_print or wants_pdf):
-        workflow.append("Format: Markdown (simple and fast)")
-    else:
-        workflow.append("Format: Markdown (can upgrade to LaTeX if needed)")
-    
-    # Determine actions based on intent
-    if wants_print and not wants_pdf and not wants_send:
-        # Direct to printer
-        if format_choice == "latex":
-            workflow.extend([
-                "1. Write content with save_latex()",
-                "2. Direct print with print_latex(file_path=...)"
-            ])
-        else:
-            workflow.extend([
-                "1. Create content",
-                "2. Direct print with print_markdown(content=...)",
-                "Note: No need to save unless user wants to keep it"
-            ])
-    
-    elif wants_pdf and not wants_print:
-        # Just create PDF
-        if format_choice == "latex":
-            workflow.extend([
-                "1. Write content with save_latex()",
-                "2. Generate PDF with latex_to_pdf(file_path=...)"
-            ])
-        else:
-            workflow.extend([
-                "1. Write content with save_markdown()",
-                "2. Generate PDF with markdown_to_pdf(file_path=...)"
-            ])
-    
-    elif wants_send or is_letter:
-        # Need a file to send
-        workflow.extend([
-            f"1. Write content with save_{format_choice}()",
-            f"2. Generate PDF with {format_choice}_to_pdf()",
-            "3. User can then attach PDF to email/upload"
-        ])
-    
-    elif not (wants_print or wants_pdf or wants_send):
-        # Just writing/editing
-        workflow.extend([
-            f"1. Write content with save_{format_choice}()",
-            "2. That's it! File saved for future use",
-            "3. Can always generate PDF or print later if needed"
-        ])
-    
-    else:
-        # Multiple outputs wanted
-        workflow.extend([
-            f"1. Write content with save_{format_choice}()",
-            f"2. Generate PDF with {format_choice}_to_pdf() if needed",
-            "3. Print with appropriate print function if needed",
-            "Note: Save first so user has a copy"
-        ])
-    
-    # Add helpful context
-    result = "**Recommended Workflow:**\n\n"
-    result += "\n".join(workflow)
-    
-    if needs_math and format_choice == "markdown":
-        result += "\n\n⚠️ Note: Markdown supports basic math with $...$, but for complex equations consider LaTeX"
-    
-    if is_simple and not (wants_print or wants_pdf):
-        result += "\n\n💡 Tip: For simple notes, just saving as Markdown is perfect. No need to generate PDF unless specifically needed."
-    
-    return result
-
-
-@mcp.tool()
-def print_text(content: str, printer: Optional[str] = None) -> str:
-    """Print plain text content.
-    
-    IMPORTANT printer selection logic for AI agents:
-    1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
-    2. If printing: Check if default printer exists. If not, ask which printer to use.
-    3. Remember the chosen printer for the rest of the session.
-    4. Only change printer if user explicitly requests a different one.
-    
-    Args:
-        content: Text content to print
-        printer: Printer name (optional, uses default if not specified)
-    """
-    # Create temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        f.write(content)
-        temp_path = f.name
-    
-    try:
-        # Print using lp command
-        cmd = ["lp", "-d", printer, temp_path] if printer else ["lp", temp_path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            job_id = result.stdout.strip().split()[-1]
-            return f"Print job submitted: {job_id}"
-        else:
-            return f"Print failed: {result.stderr}"
-    finally:
-        Path(temp_path).unlink()
-
-
-# Only register print_markdown if all dependencies are available
-if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
-    @mcp.tool()
-    def print_markdown(content: Optional[str] = None, file_path: Optional[str] = None, printer: Optional[str] = None, title: str = "Document") -> str:
-        """Print markdown content (rendered to PDF via pandoc and XeLaTeX).
-        
-        IMPORTANT printer selection logic for AI agents:
-        1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
-        2. If printing: Check if default printer exists. If not, ask which printer to use.
-        3. Remember the chosen printer for the rest of the session.
-        4. Only change printer if user explicitly requests a different one.
-        
-        Supports:
-        - Standard markdown formatting (headers, bold, italic, lists, tables)
-        - Code blocks with syntax highlighting
-        - LaTeX math expressions (use $ for inline, $$ for display math)
-        - Latin scripts (including extended European characters)
-        - Greek and Cyrillic alphabets
-        - Basic symbols and punctuation
-        
-        Limited/No support for:
-        - Complex Unicode (emoji, box drawing, etc.)
-        - Right-to-left scripts (Arabic, Hebrew)
-        - CJK characters (Chinese, Japanese, Korean)
-        
-        Args:
-            content: Markdown content to print (optional if file_path is provided)
-            file_path: Path to Markdown file to print (optional if content is provided)
-            printer: Printer name (optional, uses default if not specified)
-            title: Document title (optional)
-        """
-        # Validate input
-        if not content and not file_path:
-            return "Error: Either content or file_path must be provided"
-        
-        if content and file_path:
-            return "Error: Provide either content or file_path, not both"
-        
-        # Handle file_path input
-        if file_path:
-            # Use project-aware path resolution
-            path = resolve_project_path(file_path, create_dirs=False)
+    if action == "create":
+        if not content:
+            return "❌ Error: Content required for create action"
             
-            if not path.exists():
-                return f"File not found: {path}"
-            
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                md_path = str(path)
-                temp_file = False
-            except Exception as e:
-                return f"Failed to read file: {str(e)}"
+        # Auto-detect format
+        if format == "auto":
+            if intent and ("paper" in intent.lower() or "academic" in intent.lower() or "research" in intent.lower()):
+                format = "latex"
+            elif "\\documentclass" in content or "\\begin{" in content:
+                format = "latex"
+            else:
+                format = "markdown"
+        
+        # Determine file extension
+        ext = ".tex" if format == "latex" else ".md"
+        
+        # Create file path
+        if path:
+            file_path = Path(path).expanduser()
         else:
-            # Create temporary markdown file from content
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-                f.write(content)
-                md_path = f.name
-            temp_file = True
-        
-        # Convert to PDF using pandoc
-        pdf_path = md_path.replace('.md', '.pdf')
-        
+            # Use Documents folder
+            file_path = Path.home() / "Documents" / f"document{ext}"
+            
+        # Write content
         try:
-            # Run pandoc
-            pandoc_cmd = [
-                "pandoc", md_path,
-                "-o", pdf_path,
-                "--metadata", f"title={title}",
-                "--pdf-engine=xelatex",
-                "-V", "geometry:margin=1in",
-                "-V", "mainfont=Noto Serif",
-                "-V", "sansfont=Noto Sans",
-                "-V", "monofont=Noto Sans Mono"
-            ]
-            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                return f"Pandoc conversion failed: {result.stderr}"
-            
-            # Print the PDF
-            cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                job_id = result.stdout.strip().split()[-1]
-                return f"Print job submitted: {job_id}"
-            else:
-                return f"Print failed: {result.stderr}"
-        finally:
-            # Clean up temporary files only if we created them
-            if temp_file:
-                Path(md_path).unlink(missing_ok=True)
-                Path(pdf_path).unlink(missing_ok=True)
-            else:
-                # For user files, don't delete the source, only the generated PDF
-                Path(pdf_path).unlink(missing_ok=True)
-else:
-    # Create a placeholder function that explains what's missing
-    @mcp.tool()
-    def print_markdown(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
-        """Print markdown content (UNAVAILABLE - missing dependencies).
-        
-        This tool requires pandoc, XeLaTeX, and LaTeX fonts to be installed.
-        Once installed, it will support standard markdown with good Latin/Greek/Cyrillic
-        text rendering, but limited support for complex Unicode, RTL scripts, and CJK.
-        
-        Args:
-            content: Markdown content to print
-            printer: Printer name (optional, uses default if not specified)
-            title: Document title (optional)
-        """
-        missing = []
-        if not DEPENDENCIES["pandoc"]["available"]:
-            missing.append(DEPENDENCIES["pandoc"]["install_hint"])
-        if not DEPENDENCIES["xelatex"]["available"]:
-            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
-        if not DEPENDENCIES["latex_fonts"]["available"]:
-            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
-        
-        return f"Markdown printing is not available. Missing dependencies:\n" + "\n".join(missing)
-
-
-# Register LaTeX printing if XeLaTeX is available
-if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
-    @mcp.tool()
-    def print_latex(content: Optional[str] = None, file_path: Optional[str] = None, printer: Optional[str] = None, title: str = "Document") -> str:
-        """Print LaTeX content (compiled to PDF via XeLaTeX).
-        
-        IMPORTANT: If you already saved LaTeX content using save_latex, use the file_path 
-        parameter instead of content to avoid regenerating the same content.
-        
-        IMPORTANT printer selection logic for AI agents:
-        1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
-        2. If printing: Check if default printer exists. If not, ask which printer to use.
-        3. Remember the chosen printer for the rest of the session.
-        4. Only change printer if user explicitly requests a different one.
-        
-        Workflow options:
-        1. Direct printing: Provide content + printer
-        2. File printing: Provide file_path + printer (PREFERRED if file exists)
-        
-        Supports:
-        - Full LaTeX syntax and packages
-        - Mathematical formulas and equations
-        - TikZ diagrams and graphics
-        - Bibliography and citations
-        - Custom document classes
-        
-        Args:
-            content: LaTeX content to print (DO NOT use if you already saved the file)
-            file_path: Path to existing LaTeX file (USE THIS if you saved with save_latex)
-            printer: Printer name (optional, uses default if not specified)
-            title: Document title (optional, used in jobname)
-        """
-        # Validate input
-        if not content and not file_path:
-            return "Error: Either content or file_path must be provided"
-        
-        if content and file_path:
-            return "Error: Provide either content or file_path, not both"
-        
-        # Handle file_path input
-        if file_path:
-            # Use project-aware path resolution
-            path = resolve_project_path(file_path, create_dirs=False)
-            
-            if not path.exists():
-                return f"File not found: {path}"
-            
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                tex_path = str(path)
-                temp_file = False
-            except Exception as e:
-                return f"Failed to read file: {str(e)}"
-        else:
-            # Create temporary LaTeX file from content
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
-                f.write(content)
-                tex_path = f.name
-            temp_file = True
-        
-        # Output PDF path
-        pdf_path = tex_path.replace('.tex', '.pdf')
-        
-        try:
-            # Compile with bibliography support
-            success, error_msg = compile_latex_with_bibliography(tex_path)
-            if not success:
-                return error_msg
-            
-            # Print the PDF
-            cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                job_id = result.stdout.strip().split()[-1]
-                return f"Print job submitted: {job_id}"
-            else:
-                return f"Print failed: {result.stderr}"
-        finally:
-            # Clean up temporary files only if we created them
-            if temp_file:
-                for ext in ['.tex', '.pdf', '.aux', '.log', '.bbl', '.blg']:
-                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
-            else:
-                # For user files, only clean up auxiliary files
-                for ext in ['.aux', '.log', '.bbl', '.blg']:
-                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
-else:
-    @mcp.tool()
-    def print_latex(content: str, printer: Optional[str] = None, title: str = "Document") -> str:
-        """Print LaTeX content (UNAVAILABLE - missing dependencies).
-        
-        This tool requires XeLaTeX and LaTeX fonts to be installed.
-        
-        Args:
-            content: LaTeX content to print
-            printer: Printer name (optional, uses default if not specified)
-            title: Document title (optional)
-        """
-        missing = []
-        if not DEPENDENCIES["xelatex"]["available"]:
-            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
-        if not DEPENDENCIES["latex_fonts"]["available"]:
-            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
-        
-        return f"LaTeX printing is not available. Missing dependencies:\n" + "\n".join(missing)
-
-
-# Register markdown_to_pdf if dependencies are available
-if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
-    @mcp.tool()
-    def markdown_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
-        """Convert markdown content to PDF and save to specified path.
-        
-        Uses the active project if one is set. PDFs are saved to project/output/pdf/.
-        
-        This is useful for generating PDFs without printing them, or for systems
-        without a PDF printer configured.
-        
-        Supports:
-        - Standard markdown formatting (headers, lists, tables, code blocks)
-        - LaTeX math expressions (use $ for inline, $$ for display math)
-        - Latin scripts including European languages
-        - Greek and Cyrillic alphabets
-        
-        Args:
-            content: Markdown content to convert (optional if file_path is provided)
-            file_path: Path to Markdown file to convert (optional if content is provided)
-            output_path: Path where PDF should be saved. Can be:
-                - Simple name: report.pdf (saves to project/output/pdf/ or ~/Documents/)
-                - Relative path: final/report.pdf (relative to project)
-                - Full path: /home/user/Documents/file.pdf
-                - With ~: ~/Downloads/file.pdf
-            title: Document title (optional)
-        """
-        # Validate input
-        if not content and not file_path:
-            return "Error: Either content or file_path must be provided"
-        
-        if content and file_path:
-            return "Error: Provide either content or file_path, not both"
-        
-        if not output_path:
-            return "Error: output_path is required"
-        
-        # Check if content was recently saved
-        if content:
-            content_hash = hashlib.sha256(content.encode()).hexdigest()
-            if content_hash in saved_file_hashes:
-                saved_path = saved_file_hashes[content_hash]
-                return (f"WARNING: This content was already saved to {saved_path}\n"
-                       f"Please use: latex_to_pdf(file_path='{saved_path}', output_path='{output_path}')\n"
-                       f"This avoids regenerating the same content and is more efficient.")
-        
-        # Handle file_path input
-        if file_path:
-            # Use project path resolution for input file
-            path = resolve_project_path(file_path, create_dirs=False)
-            
-            if not path.exists():
-                return f"File not found: {path}"
-            
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except Exception as e:
-                return f"Failed to read file: {str(e)}"
-        
-        # Handle output path with project resolution
-        output_path = resolve_project_path(output_path, create_dirs=True)
-        
-        # If we have a project and it's a simple filename, put in output/pdf folder
-        if current_project and "/" not in str(output_path.name) and not str(output_path).startswith("~"):
-            output_dir = get_project_base() / current_project / "output" / "pdf"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / output_path.name
-        
-        # Ensure output path ends with .pdf
-        if not str(output_path).endswith('.pdf'):
-            output_path = Path(str(output_path) + '.pdf')
-        
-        # Check if file already exists
-        if output_path.exists():
-            # Generate unique filename
-            base = output_path.stem
-            dir_path = output_path.parent
-            counter = 1
-            while output_path.exists():
-                output_path = dir_path / f"{base}_{counter}.pdf"
-                counter += 1
-        
-        # Create temporary markdown file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
-            f.write(content)
-            md_path = f.name
-        
-        try:
-            # Run pandoc
-            pandoc_cmd = [
-                "pandoc", md_path,
-                "-o", str(output_path),
-                "--metadata", f"title={title}",
-                "--pdf-engine=xelatex",
-                "-V", "geometry:margin=1in",
-                "-V", "mainfont=Noto Serif",
-                "-V", "sansfont=Noto Sans",
-                "-V", "monofont=Noto Sans Mono"
-            ]
-            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                return f"PDF conversion failed: {result.stderr}"
-            
-            # Verify file was created
-            if not output_path.exists():
-                return f"PDF generation failed - file was not created at {output_path}"
-            
-            # Show project-relative path if in a project
-            if current_project and str(output_path).startswith(str(get_project_base())):
-                rel_path = output_path.relative_to(get_project_base() / current_project)
-                return f"PDF saved to project '{current_project}': {rel_path}"
-            else:
-                return f"PDF saved successfully to: {output_path}"
-        except PermissionError:
-            return f"Permission denied: Cannot write to {output_path}"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content)
+            return f"✓ Document created: {file_path}\n💡 Next steps:\n→ Edit: document(action='edit', path='{file_path}')\n→ Export: output(action='export', source='{file_path}')"
         except Exception as e:
-            return f"Failed to save PDF: {str(e)}"
-        finally:
-            Path(md_path).unlink(missing_ok=True)
-else:
-    @mcp.tool()
-    def markdown_to_pdf(content: str, output_path: str, title: str = "Document") -> str:
-        """Convert markdown to PDF (UNAVAILABLE - missing dependencies).
-        
-        This tool requires pandoc, XeLaTeX, and LaTeX fonts to be installed.
-        
-        Args:
-            content: Markdown content to convert
-            output_path: Path where PDF should be saved
-            title: Document title (optional)
-        """
-        missing = []
-        if not DEPENDENCIES["pandoc"]["available"]:
-            missing.append(DEPENDENCIES["pandoc"]["install_hint"])
-        if not DEPENDENCIES["xelatex"]["available"]:
-            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
-        if not DEPENDENCIES["latex_fonts"]["available"]:
-            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
-        
-        return f"Markdown to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
+            return f"❌ Error creating document: {e}"
+            
+    elif action == "read":
+        if not path:
+            return "❌ Error: Path required for read action"
+            
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"❌ Error: File not found: {file_path}"
+            
+        try:
+            lines = file_path.read_text().splitlines()
+            # Format with line numbers
+            result = []
+            for i, line in enumerate(lines[:50], 1):  # Limit to 50 lines
+                result.append(f"{i:4d}\t{line}")
+            return "\n".join(result) + (f"\n... ({len(lines)} total lines)" if len(lines) > 50 else "")
+        except Exception as e:
+            return f"❌ Error reading document: {e}"
+            
+    elif action == "edit":
+        if not path or not old_string or not new_string:
+            return "❌ Error: Path, old_string, and new_string required for edit action"
+            
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"❌ Error: File not found: {file_path}"
+            
+        try:
+            content = file_path.read_text()
+            if old_string not in content:
+                return f"❌ Error: String '{old_string}' not found in file"
+                
+            new_content = content.replace(old_string, new_string, 1)
+            file_path.write_text(new_content)
+            return f"✓ Document edited: {file_path}\n💡 Next: output(action='export', source='{file_path}')"
+        except Exception as e:
+            return f"❌ Error editing document: {e}"
+            
+    elif action == "convert":
+        if not source or not target_format:
+            return "❌ Error: Source and target_format required for convert action"
+            
+        source_path = Path(source).expanduser()
+        if not source_path.exists():
+            return f"❌ Error: Source file not found: {source_path}"
+            
+        if target_format == "latex" and source_path.suffix == ".md":
+            # Convert Markdown to LaTeX using pandoc
+            output_path = source_path.with_suffix(".tex")
+            try:
+                subprocess.run(["pandoc", "-f", "markdown", "-t", "latex", "-o", str(output_path), str(source_path)], check=True)
+                return f"✓ Converted to LaTeX: {output_path}\n💡 Next: document(action='edit', path='{output_path}')"
+            except subprocess.CalledProcessError as e:
+                return f"❌ Error converting document: {e}"
+        else:
+            return f"❌ Error: Conversion from {source_path.suffix} to {target_format} not supported"
+            
+    else:
+        return f"❌ Error: Unknown document action '{action}'. Available: create, read, edit, convert, validate, status"
 
 
-# Register markdown_to_latex if dependencies are available
-if DEPENDENCIES["pandoc"]["available"]:
-    @mcp.tool()
-    def markdown_to_latex(file_path: str, output_path: Optional[str] = None, title: str = "Document", standalone: bool = True) -> str:
-        """Convert a Markdown file to LaTeX format.
-        
-        This tool provides access to the intermediate LaTeX file that pandoc generates,
-        allowing for manual customization before final PDF compilation.
-        
-        Workflow:
-        1. Write content in Markdown (easier to write)
-        2. Convert to LaTeX using this tool
-        3. Fine-tune the LaTeX if needed
-        4. Compile to PDF using latex_to_pdf
-        
-        Args:
-            file_path: Path to Markdown file. Can be:
-                - Simple name: document.md (reads from ~/Documents/)
-                - Full path: /home/user/Documents/document.md
-                - Relative to Documents: notes/document.md
-            output_path: Path where LaTeX file should be saved (optional).
-                If not specified, uses same name with .tex extension
-            title: Document title (optional)
-            standalone: Create complete LaTeX document (True) or just fragment (False)
-        
-        Returns:
-            Success message with output file path, or error description
-        """
-        # Handle input file path using project-aware resolution
-        input_path = resolve_project_path(file_path, create_dirs=False)
-        
-        if not input_path.exists():
-            return f"File not found: {input_path}"
-        
-        # Handle output path
+@mcp.tool()
+def output(
+    action: str,
+    source: Optional[str] = None,
+    content: Optional[str] = None,
+    format: str = "auto",
+    printer: Optional[str] = None,
+    output_path: Optional[str] = None
+) -> str:
+    """Generate output from documents - print to paper or export to PDF.
+    
+    BEST PRACTICES:
+    - Use 'source' parameter with existing files instead of 'content' to avoid regeneration
+    - Export to PDF first if you need both digital and printed copies
+    
+    Actions:
+    - print: Send to physical printer (auto-converts to PDF if needed)
+    - export: Save as PDF without printing
+    """
+    if action == "print":
+        if not source and not content:
+            return "❌ Error: Either source or content required for print action"
+            
+        # Use default printer if not specified
+        if not printer and SESSION_CONTEXT["default_printer"]:
+            printer = SESSION_CONTEXT["default_printer"]
+            
+        if source:
+            file_path = Path(source).expanduser()
+            if not file_path.exists():
+                return f"❌ Error: Source file not found: {file_path}"
+                
+            # Print the file
+            try:
+                cmd = ["lp", str(file_path)]
+                if printer:
+                    cmd.extend(["-d", printer])
+                subprocess.run(cmd, check=True)
+                return f"✓ Sent to printer: {file_path}"
+            except subprocess.CalledProcessError as e:
+                return f"❌ Error printing: {e}"
+        else:
+            # Print content directly
+            try:
+                process = subprocess.Popen(["lp"] + (["-d", printer] if printer else []), stdin=subprocess.PIPE)
+                process.communicate(content.encode())
+                return "✓ Content sent to printer"
+            except Exception as e:
+                return f"❌ Error printing: {e}"
+                
+    elif action == "export":
+        if not source:
+            return "❌ Error: Source required for export action"
+            
+        source_path = Path(source).expanduser()
+        if not source_path.exists():
+            return f"❌ Error: Source file not found: {source_path}"
+            
+        # Determine output path
         if output_path:
-            # Use project-aware resolution for output path
-            output_path = str(resolve_project_path(output_path, create_dirs=True))
+            pdf_path = Path(output_path).expanduser()
         else:
-            # Use same location as input file, just change extension
-            output_path = str(input_path.with_suffix('.tex'))
-        
-        # Ensure output path ends with .tex
-        if not output_path.endswith('.tex'):
-            output_path += '.tex'
-        
-        # Check if output file already exists
-        if Path(output_path).exists():
-            # Generate unique filename
-            base = Path(output_path).stem
-            dir_path = Path(output_path).parent
-            counter = 1
-            while Path(output_path).exists():
-                output_path = str(dir_path / f"{base}_{counter}.tex")
-                counter += 1
-        
-        try:
-            # Prepare pandoc command
-            pandoc_cmd = [
-                "pandoc",
-                str(input_path),
-                "-o", output_path,
-                "--metadata", f"title={title}",
-                "-t", "latex"
-            ]
+            pdf_path = source_path.with_suffix(".pdf")
             
-            if standalone:
-                pandoc_cmd.extend([
-                    "-s",  # standalone document
-                    "--pdf-engine=xelatex",
-                    "-V", "geometry:margin=1in",
-                    "-V", "mainfont=Noto Serif",
-                    "-V", "sansfont=Noto Sans",
-                    "-V", "monofont=Noto Sans Mono"
-                ])
-            
-            # Run pandoc
-            result = subprocess.run(pandoc_cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                return f"Markdown to LaTeX conversion failed: {result.stderr}"
-            
-            # Verify file was created
-            if not Path(output_path).exists():
-                return f"Conversion failed - LaTeX file was not created at {output_path}"
-            
-            # Add a comment at the top of the LaTeX file about its origin
-            with open(output_path, 'r', encoding='utf-8') as f:
-                latex_content = f.read()
-            
-            # Add conversion info comment
-            comment = f"% Converted from Markdown: {input_path.name}\n% Conversion date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n% Use latex_to_pdf to compile this file to PDF\n\n"
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(comment + latex_content)
-            
-            return f"Markdown successfully converted to LaTeX: {output_path}\n\nNext steps:\n1. Review/edit the LaTeX file if needed\n2. Use latex_to_pdf(file_path='{output_path}', output_path='document.pdf') to create PDF"
-            
-        except PermissionError:
-            return f"Permission denied: Cannot write to {output_path}"
-        except Exception as e:
-            return f"Failed to convert Markdown to LaTeX: {str(e)}"
-else:
-    @mcp.tool()
-    def markdown_to_latex(file_path: str, output_path: Optional[str] = None, title: str = "Document", standalone: bool = True) -> str:
-        """Convert Markdown to LaTeX (UNAVAILABLE - missing dependencies).
-        
-        This tool requires pandoc to be installed.
-        """
-        return f"Markdown to LaTeX conversion is not available. Missing dependency:\n{DEPENDENCIES['pandoc']['install_hint']}"
-
-
-@mcp.tool()
-def save_markdown(content: str, filename: str) -> str:
-    """Save markdown content to a file.
-    
-    Saves to the active project if one is set, otherwise to Documents folder.
-    
-    Args:
-        content: Markdown content to save
-        filename: Filename to save. Can be:
-            - Simple name: document.md (saves to project/content/ or ~/Documents/)
-            - Relative path: drafts/chapter1.md (relative to project)
-            - Full path: /home/user/Documents/document.md
-            - With ~: ~/Downloads/document.md
-    """
-    # Use project path resolution
-    output_path = resolve_project_path(filename, create_dirs=True)
-    
-    # If we have a project and it's a simple filename, put in content folder
-    if current_project and "/" not in filename and not filename.startswith("~") and not Path(filename).is_absolute():
-        content_dir = output_path.parent / "content"
-        content_dir.mkdir(exist_ok=True)
-        output_path = content_dir / output_path.name
-    
-    # Ensure output path ends with .md
-    if not str(output_path).endswith('.md'):
-        output_path = Path(str(output_path) + '.md')
-    
-    # Check if file already exists
-    if output_path.exists():
-        # Generate unique filename
-        base = output_path.stem
-        dir_path = output_path.parent
-        counter = 1
-        while output_path.exists():
-            output_path = dir_path / f"{base}_{counter}.md"
-            counter += 1
-    
-    try:
-        # Write the markdown file
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        # Show project-relative path if in a project
-        if current_project and str(output_path).startswith(str(get_project_base())):
-            rel_path = output_path.relative_to(get_project_base() / current_project)
-            return f"Markdown saved to project '{current_project}': {rel_path}"
-        else:
-            return f"Markdown saved successfully to: {output_path}"
-    except PermissionError:
-        return f"Permission denied: Cannot write to {output_path}"
-    except Exception as e:
-        return f"Failed to save markdown: {str(e)}"
-
-
-@mcp.tool()
-def list_available_fonts(style: Optional[str] = None) -> str:
-    """List fonts available for use with XeLaTeX.
-    
-    Args:
-        style: Filter by style - 'serif', 'sans', 'mono', or None for all
-    
-    Returns:
-        List of available fonts with their properties
-    """
-    try:
-        # Use fc-list to get font information
-        cmd = ["fc-list", "--format=%{family}\\n", ":outline=True:scalable=True"]
-        
-        # Add style filter if specified
-        if style:
-            if style.lower() == "serif":
-                cmd[1] = "--format=%{family}\\n"
-                cmd.append(":serif")
-            elif style.lower() == "sans":
-                cmd[1] = "--format=%{family}\\n"
-                cmd.append(":sans")
-            elif style.lower() == "mono":
-                cmd[1] = "--format=%{family}\\n"
-                cmd.append(":mono:spacing=mono")
-                
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            return "Error: fontconfig tools not available. Install fontconfig package."
-        
-        # Parse and deduplicate font families
-        fonts = set()
-        for line in result.stdout.strip().split('\n'):
-            if line:
-                # Handle font families with language variants
-                font_name = line.split(',')[0].strip()
-                if font_name:
-                    fonts.add(font_name)
-        
-        # Sort fonts alphabetically
-        sorted_fonts = sorted(fonts)
-        
-        # Build response
-        response = f"Available {style or 'system'} fonts for XeLaTeX ({len(sorted_fonts)} found):\n\n"
-        
-        # Group by first letter for easier browsing
-        current_letter = ""
-        for font in sorted_fonts:
-            first_letter = font[0].upper()
-            if first_letter != current_letter:
-                current_letter = first_letter
-                response += f"\n{current_letter}:\n"
-            response += f"  {font}\n"
-        
-        # Add usage example
-        response += "\n\nTo use a font in LaTeX:\n"
-        response += "\\usepackage{fontspec}\n"
-        response += "\\setmainfont{Font Name}     % for main text\n"
-        response += "\\setsansfont{Font Name}     % for sans-serif\n"
-        response += "\\setmonofont{Font Name}     % for monospace\n"
-        
-        # Add common recommendations
-        response += "\n\nPopular choices:\n"
-        
-        common_fonts = {
-            "serif": ["Liberation Serif", "DejaVu Serif", "Noto Serif", "Linux Libertine", "TeX Gyre Termes"],
-            "sans": ["Liberation Sans", "DejaVu Sans", "Noto Sans", "Open Sans", "Roboto"],
-            "mono": ["Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono", "Fira Code", "JetBrains Mono"]
-        }
-        
-        for category, font_list in common_fonts.items():
-            available = [f for f in font_list if f in sorted_fonts]
-            if available:
-                response += f"\n{category.title()}:"
-                for font in available[:3]:  # Show up to 3
-                    response += f"\n  - {font}"
-        
-        return response
-        
-    except FileNotFoundError:
-        return "Error: fontconfig not installed. Install with:\n" + \
-               "  Debian/Ubuntu: apt install fontconfig\n" + \
-               "  Fedora: dnf install fontconfig\n" + \
-               "  Arch: pacman -S fontconfig"
-    except Exception as e:
-        return f"Error listing fonts: {str(e)}"
-
-
-@mcp.tool()
-def validate_latex(content: Optional[str] = None, file_path: Optional[str] = None) -> str:
-    """Validate LaTeX content for syntax errors before compilation.
-    
-    Uses lacheck and chktex (if available) and attempts a test compilation
-    to identify issues before actually printing or saving.
-    
-    Args:
-        content: LaTeX content to validate (optional if file_path is provided)
-        file_path: Path to LaTeX file to validate (optional if content is provided)
-    
-    Returns:
-        Validation report with any errors or warnings found
-    """
-    # Validate input
-    if not content and not file_path:
-        return "Error: Either content or file_path must be provided"
-    
-    if content and file_path:
-        return "Error: Provide either content or file_path, not both"
-    
-    # Handle file_path input
-    if file_path:
-        # Use project-aware path resolution
-        path = resolve_project_path(file_path, create_dirs=False)
-        
-        if not path.exists():
-            return f"File not found: {path}"
-        
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            tex_path = str(path)
-            temp_file = False
-        except Exception as e:
-            return f"Failed to read file: {str(e)}"
-    else:
-        # Create temporary LaTeX file from content
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
-            f.write(content)
-            tex_path = f.name
-        temp_file = True
-    
-    try:
-        report = []
-        
-        # Run lacheck if available
-        if check_command("lacheck"):
-            result = subprocess.run(
-                ["lacheck", tex_path],
-                capture_output=True,
-                text=True
-            )
-            if result.stdout:
-                report.append("=== LaCheck Warnings ===")
-                report.append(result.stdout.strip())
-        
-        # Run chktex if available (more comprehensive)
-        if check_command("chktex"):
-            result = subprocess.run(
-                ["chktex", "-q", "-n", "all", tex_path],
-                capture_output=True,
-                text=True
-            )
-            if result.stdout:
-                report.append("\n=== ChkTeX Analysis ===")
-                report.append(result.stdout.strip())
-        
-        # Perform semantic LaTeX validation without compilation
-        report.append("\n=== Semantic Validation ===")
-        semantic_errors = []
-        semantic_warnings = []
-        
-        # Check for common LaTeX issues
-        lines = content.split('\n')
-        for i, line in enumerate(lines, 1):
-            # Check for unbalanced math delimiters
-            dollar_count = line.count('$') - line.count('\\$')
-            if dollar_count % 2 != 0:
-                semantic_errors.append(f"Line {i}: Unbalanced $ (math mode) - odd number of $")
-            
-            # Check for common undefined control sequences  
-            import re
-            # Look for backslash followed by non-standard command
-            commands = re.findall(r'\\([a-zA-Z]+)', line)
-            undefined_commands = ['emoj', 'emoji']  # Known problematic commands
-            for cmd in commands:
-                if cmd in undefined_commands:
-                    semantic_errors.append(f"Line {i}: Likely undefined control sequence \\{cmd}")
-            
-            # Check for unicode characters that may cause issues
-            for j, char in enumerate(line):
-                if ord(char) > 127 and ord(char) not in range(0x0100, 0x024F):  # Allow extended Latin
-                    if ord(char) >= 0x1F300:  # Emoji range
-                        semantic_errors.append(f"Line {i}, col {j+1}: Unicode emoji character '{char}' (U+{ord(char):04X}) - will cause XeLaTeX errors")
-                    elif ord(char) >= 0x2600 and ord(char) <= 0x26FF:  # Miscellaneous symbols
-                        semantic_warnings.append(f"Line {i}, col {j+1}: Unicode symbol '{char}' may need special handling")
-            
-            # Check for missing packages based on commands used
-            if '\\includegraphics' in line and '\\usepackage{graphicx}' not in content:
-                semantic_warnings.append(f"Line {i}: \\includegraphics used but graphicx package may not be loaded")
-            if '\\begin{tikzpicture}' in line and '\\usepackage{tikz}' not in content:
-                semantic_errors.append(f"Line {i}: TikZ picture used but tikz package not loaded")
-            
-            # Check for \begin without matching \end
-            begin_match = re.search(r'\\begin\{([^}]+)\}', line)
-            if begin_match:
-                env_name = begin_match.group(1)
-                # Simple check - could be improved with stack tracking
-                if f'\\end{{{env_name}}}' not in content[content.find(line):]:
-                    semantic_warnings.append(f"Line {i}: \\begin{{{env_name}}} may not have matching \\end{{{env_name}}}")
-        
-        # Report semantic issues
-        if semantic_errors:
-            report.append("Errors that will prevent compilation:")
-            for err in semantic_errors:
-                report.append(f"  ✗ {err}")
-        
-        if semantic_warnings:
-            report.append("\nWarnings (may or may not cause issues):")
-            for warn in semantic_warnings:
-                report.append(f"  ⚠ {warn}")
-        
-        if not semantic_errors and not semantic_warnings:
-            report.append("✓ No semantic issues detected")
-        
-        # Try a quick compilation to catch more errors
-        if DEPENDENCIES["xelatex"]["available"]:
-            report.append("\n=== Compilation Test ===")
-            # Run with batchmode to suppress output but catch errors
-            result = subprocess.run(
-                ["xelatex", "-interaction=batchmode", "-halt-on-error", tex_path],
-                capture_output=True,
-                text=True,
-                cwd=os.path.dirname(tex_path)
-            )
-            
-            if result.returncode != 0:
-                # Read the log file for errors
-                log_path = tex_path.replace('.tex', '.log')
-                if os.path.exists(log_path):
-                    with open(log_path, 'r') as log:
-                        log_content = log.read()
-                        # Extract error messages
-                        errors = []
-                        in_error = False
-                        for line in log_content.split('\n'):
-                            if line.startswith('!'):
-                                in_error = True
-                                errors.append(line)
-                            elif in_error and (line.startswith('l.') or line.strip() == ''):
-                                errors.append(line)
-                                if line.strip() == '':
-                                    in_error = False
-                            elif 'Error:' in line or 'error:' in line:
-                                errors.append(line)
-                        
-                        if errors:
-                            report.append("Compilation FAILED with errors:")
-                            report.extend(errors[:20])  # First 20 error lines
-                            if len(errors) > 20:
-                                report.append(f"... and {len(errors)-20} more error lines")
-                
-                # Clean up auxiliary files
-                for ext in ['.aux', '.log', '.out']:
-                    aux_file = tex_path.replace('.tex', ext)
-                    if os.path.exists(aux_file):
-                        os.unlink(aux_file)
-            else:
-                report.append("✓ Compilation successful! Document is valid.")
-                # Clean up PDF and auxiliary files
-                for ext in ['.pdf', '.aux', '.log', '.out']:
-                    aux_file = tex_path.replace('.tex', ext)
-                    if os.path.exists(aux_file):
-                        os.unlink(aux_file)
-        else:
-            report.append("\n⚠ XeLaTeX not available for compilation test.")
-        
-        # Clean up temp file only if we created it
-        if temp_file:
-            os.unlink(tex_path)
-        
-        if not report:
-            return "✓ LaTeX validation passed - no issues found!"
-        
-        return "\n".join(report)
-        
-    except Exception as e:
-        if temp_file and os.path.exists(tex_path):
-            os.unlink(tex_path)
-        return f"Validation error: {str(e)}"
-
-
-@mcp.tool()
-def save_latex(content: str, filename: str) -> str:
-    """Save LaTeX content to a .tex file.
-    
-    Saves to the active project if one is set, otherwise to Documents folder.
-    
-    After saving, you can:
-    - Convert to PDF: Use latex_to_pdf with file_path=<saved_file>
-    - Print: Use print_latex with file_path=<saved_file>
-    
-    IMPORTANT: Do NOT regenerate the content when using latex_to_pdf or print_latex.
-    Instead, use the file_path parameter with the path returned by this function.
-    
-    Args:
-        content: LaTeX content to save
-        filename: Filename to save. Can be:
-            - Simple name: document.tex (saves to project/content/ or ~/Documents/)
-            - Relative path: chapters/intro.tex (relative to project)
-            - Full path: /home/user/Documents/document.tex
-            - With ~: ~/Downloads/document.tex
-    """
-    # Use project path resolution
-    output_path = resolve_project_path(filename, create_dirs=True)
-    
-    # If we have a project and it's a simple filename, put in content folder
-    if current_project and "/" not in filename and not filename.startswith("~") and not Path(filename).is_absolute():
-        content_dir = output_path.parent / "content"
-        content_dir.mkdir(exist_ok=True)
-        output_path = content_dir / output_path.name
-    
-    # Ensure output path ends with .tex
-    if not str(output_path).endswith('.tex'):
-        output_path = Path(str(output_path) + '.tex')
-    
-    # Check if file already exists
-    if output_path.exists():
-        # Generate unique filename
-        base = output_path.stem
-        dir_path = output_path.parent
-        counter = 1
-        while output_path.exists():
-            output_path = dir_path / f"{base}_{counter}.tex"
-            counter += 1
-    
-    try:
-        # Write the LaTeX file
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        # Track content hash to detect redundant regeneration
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
-        saved_file_hashes[content_hash] = str(output_path)
-        recent_content_hashes.append(content_hash)
-        
-        # Show project-relative path if in a project
-        if current_project and str(output_path).startswith(str(get_project_base())):
-            rel_path = output_path.relative_to(get_project_base() / current_project)
-            return f"LaTeX saved to project '{current_project}': {rel_path}"
-        else:
-            return f"LaTeX saved successfully to: {output_path}"
-    except PermissionError:
-        return f"Permission denied: Cannot write to {output_path}"
-    except Exception as e:
-        return f"Failed to save LaTeX: {str(e)}"
-
-
-# Register latex_to_pdf if XeLaTeX is available
-if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["available"]:
-    @mcp.tool()
-    def latex_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
-        """Convert LaTeX content to PDF and save to specified path.
-        
-        IMPORTANT: If you already saved LaTeX content using save_latex, use the file_path 
-        parameter instead of content to avoid regenerating the same content.
-        
-        Workflow options:
-        1. Direct conversion: Provide content + output_path
-        2. File conversion: Provide file_path + output_path (PREFERRED if file exists)
-        
-        Args:
-            content: LaTeX content to convert (DO NOT use if you already saved the file)
-            file_path: Path to existing LaTeX file (USE THIS if you saved with save_latex)
-            output_path: Path where PDF should be saved. Can be:
-                - Simple name: report.pdf (saves to project/output/pdf/ or ~/Documents/)
-                - Relative path: final/report.pdf (relative to project)
-                - Full path: /home/user/Documents/file.pdf
-                - With ~: ~/Downloads/file.pdf
-            title: Document title (optional, used in jobname)
-        """
-        # Validate input
-        if not content and not file_path:
-            return "Error: Either content or file_path must be provided"
-        
-        if content and file_path:
-            return "Error: Provide either content or file_path, not both"
-        
-        if not output_path:
-            return "Error: output_path is required"
-        
-        # Check if content was recently saved
-        if content:
-            content_hash = hashlib.sha256(content.encode()).hexdigest()
-            if content_hash in saved_file_hashes:
-                saved_path = saved_file_hashes[content_hash]
-                return (f"WARNING: This content was already saved to {saved_path}\n"
-                       f"Please use: latex_to_pdf(file_path='{saved_path}', output_path='{output_path}')\n"
-                       f"This avoids regenerating the same content and is more efficient.")
-        
-        # Handle file_path input
-        if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
-            
-            if not path.exists():
-                return f"File not found: {path}"
-            
+        # Convert based on source type
+        if source_path.suffix == ".md":
+            # Markdown to PDF via pandoc
             try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                tex_path = str(path)
-                temp_file = False
-            except Exception as e:
-                return f"Failed to read file: {str(e)}"
-        else:
-            # Create temporary LaTeX file from content
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as f:
-                f.write(content)
-                tex_path = f.name
-            temp_file = True
-        
-        # Handle output path with project resolution
-        output_path = resolve_project_path(output_path, create_dirs=True)
-        
-        # If we have a project and it's a simple filename, put in output/pdf folder
-        if current_project and "/" not in str(output_path.name) and not str(output_path).startswith("~"):
-            output_dir = get_project_base() / current_project / "output" / "pdf"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / output_path.name
-        
-        # Ensure output path ends with .pdf
-        if not str(output_path).endswith('.pdf'):
-            output_path = Path(str(output_path) + '.pdf')
-        
-        # Check if file already exists
-        if output_path.exists():
-            # Generate unique filename
-            base = output_path.stem
-            dir_path = output_path.parent
-            counter = 1
-            while output_path.exists():
-                output_path = dir_path / f"{base}_{counter}.pdf"
-                counter += 1
-        
-        try:
-            # Compile with bibliography support
-            success, error_msg = compile_latex_with_bibliography(tex_path)
-            if not success:
-                return error_msg
-            
-            # Move the generated PDF to the desired location
-            generated_pdf = tex_path.replace('.tex', '.pdf')
-            shutil.move(generated_pdf, str(output_path))
-            
-            return f"PDF saved successfully to: {output_path}"
-            
-        except PermissionError:
-            return f"Permission denied: Cannot write to {output_path}"
-        except Exception as e:
-            return f"Failed to save PDF: {str(e)}"
-        finally:
-            # Clean up temporary files only if we created them
-            if temp_file:
-                for ext in ['.tex', '.aux', '.log', '.bbl', '.blg']:
-                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
-            else:
-                # For user files, only clean up auxiliary files
-                for ext in ['.aux', '.log', '.bbl', '.blg']:
-                    Path(tex_path.replace('.tex', ext)).unlink(missing_ok=True)
-else:
-    @mcp.tool()
-    def latex_to_pdf(content: Optional[str] = None, file_path: Optional[str] = None, output_path: str = None, title: str = "Document") -> str:
-        """Convert LaTeX to PDF (UNAVAILABLE - missing dependencies).
-        
-        This tool requires XeLaTeX and LaTeX fonts to be installed.
-        """
-        missing = []
-        if not DEPENDENCIES["xelatex"]["available"]:
-            missing.append(DEPENDENCIES["xelatex"]["install_hint"])
-        if not DEPENDENCIES["latex_fonts"]["available"]:
-            missing.append(DEPENDENCIES["latex_fonts"]["install_hint"])
-        
-        return f"LaTeX to PDF conversion is not available. Missing dependencies:\n" + "\n".join(missing)
-
-
-@mcp.tool()
-def list_documents(folder: str = "") -> str:
-    """List all printable files in project directory or Documents folder.
-    
-    IMPORTANT for AI agents: Use this tool to find files when the user provides
-    partial or approximate filenames. This tool shows ALL file types including
-    PDF, Markdown, LaTeX, HTML, SVG, images, and other documents.
-    
-    When a project is active, lists files in the project directory.
-    When no project is active, lists files in ~/Documents/.
-    
-    Args:
-        folder: Subfolder to list (optional, e.g., "reports" or "content")
-    """
-    # Use project-aware resolution for the base directory
-    if folder:
-        documents_dir = resolve_project_path(folder, create_dirs=False)
-    else:
-        # If no folder specified, use the project root or Documents
-        if current_project:
-            documents_dir = get_project_base() / current_project
-        else:
-            documents_dir = Path.home() / "Documents"
-    
-    if not documents_dir.exists():
-        return f"Directory not found: {documents_dir}"
-    
-    try:
-        # Define file types to list
-        file_patterns = {
-            "PDF files": "*.pdf",
-            "Markdown files": "*.md", 
-            "LaTeX files": "*.tex",
-            "HTML files": "*.html",
-            "SVG files": "*.svg",
-            "Image files": ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp"],
-            "Text files": "*.txt",
-            "Other documents": ["*.doc", "*.docx", "*.odt", "*.rtf"]
-        }
-        
-        all_files = {}
-        
-        # Collect files by type
-        for file_type, patterns in file_patterns.items():
-            if isinstance(patterns, str):
-                patterns = [patterns]
-            
-            files = []
-            for pattern in patterns:
-                files.extend(documents_dir.glob(pattern))
-            
-            if files:
-                all_files[file_type] = sorted(files)
-        
-        if not all_files:
-            return f"No document files found in {documents_dir}"
-        
-        result = f"Files in {documents_dir}:\n\n"
-        
-        # Display files by type
-        for file_type, files in all_files.items():
-            result += f"{file_type}:\n"
-            for f in files:
-                size = f.stat().st_size / 1024  # KB
-                result += f"  - {f.name} ({size:.1f} KB)\n"
-            result += "\n"
-        
-        return result.rstrip()
-    except PermissionError:
-        return f"Permission denied accessing {documents_dir}"
-    except Exception as e:
-        return f"Error listing documents: {str(e)}"
-
-
-@mcp.tool()
-def print_from_documents(filename: str, printer: Optional[str] = None, folder: str = "") -> str:
-    """Print a PDF or Markdown file from project directory or Documents folder.
-    
-    IMPORTANT printer selection logic for AI agents:
-    1. First print: Check if default printer exists. If not, ask which printer to use.
-    2. Remember the chosen printer for the rest of the session.
-    3. Only change printer if user explicitly requests a different one.
-    
-    When a project is active, looks for files in the project directory.
-    When no project is active, looks for files in ~/Documents/.
-    
-    Args:
-        filename: Name of file to print (e.g., "report.pdf" or "notes.md")
-        printer: Printer name (optional, uses default if not specified)
-        folder: Subfolder to look in (optional, e.g., "reports" or "output/pdf")
-    """
-    # Construct the full relative path
-    if folder:
-        relative_path = f"{folder}/{filename}"
-    else:
-        relative_path = filename
-    
-    # Use project-aware resolution
-    file_path = resolve_project_path(relative_path, create_dirs=False)
-    
-    if not file_path.exists():
-        # Try with common extensions if not provided
-        if not file_path.suffix:
-            for ext in ['.pdf', '.md', '.tex']:
-                test_path = resolve_project_path(f"{relative_path}{ext}", create_dirs=False)
-                if test_path.exists():
-                    file_path = test_path
-                    break
-    
-    if not file_path.exists():
-        return f"File not found: {file_path}"
-    
-    # If it's a markdown file, convert to PDF first
-    if file_path.suffix.lower() == '.md':
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Use our existing markdown printing logic
-            return print_markdown(content, printer, title=file_path.stem)
-        except Exception as e:
-            return f"Failed to read markdown file: {str(e)}"
-    
-    # If it's a LaTeX file, compile and print
-    if file_path.suffix.lower() == '.tex':
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Use our existing LaTeX printing logic
-            return print_latex(content, printer, title=file_path.stem)
-        except Exception as e:
-            return f"Failed to read LaTeX file: {str(e)}"
-    
-    # For PDFs and other files, use regular print_file
-    return print_file(str(file_path), printer)
-
-
-@mcp.tool()
-def print_file(path: str, printer: Optional[str] = None) -> str:
-    """Print a file from the filesystem.
-    
-    IMPORTANT printer selection logic for AI agents:
-    1. First print: If user doesn't specify, ask "Would you like to print or save as PDF?"
-    2. If printing: Check if default printer exists. If not, ask which printer to use.
-    3. Remember the chosen printer for the rest of the session.
-    4. Only change printer if user explicitly requests a different one.
-    
-    Args:
-        path: Path to the file to print (use ~ for home directory)
-        printer: Printer name (optional, uses default if not specified)
-    """
-    # Expand user home directory
-    path = str(Path(path).expanduser())
-    
-    if not Path(path).exists():
-        return f"File not found: {path}"
-    
-    # Detect file type
-    mime = magic.from_file(path, mime=True)
-    file_ext = Path(path).suffix.lower()
-    
-    # Handle HTML files
-    if mime == "text/html" or file_ext == ".html":
-        if DEPENDENCIES["weasyprint"]["available"]:
-            # Convert HTML to PDF first
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
-                pdf_path = tmp_pdf.name
-            
+                subprocess.run(["pandoc", source_path, "-o", pdf_path, "--pdf-engine=xelatex"], check=True)
+                return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
+            except subprocess.CalledProcessError as e:
+                return f"❌ Error creating PDF: {e}"
+                
+        elif source_path.suffix == ".tex":
+            # LaTeX to PDF via xelatex
             try:
-                # Use weasyprint to convert HTML to PDF
-                result = subprocess.run(
-                    ["weasyprint", path, pdf_path],
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode != 0:
-                    return f"HTML to PDF conversion failed: {result.stderr}"
-                
-                # Print the PDF
-                cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                # Clean up
-                os.unlink(pdf_path)
-                
-                if result.returncode == 0:
-                    job_id = result.stdout.strip().split()[-1]
-                    return f"Print job submitted: {job_id} (HTML rendered to PDF)"
-                else:
-                    return f"Print failed: {result.stderr}"
-                    
-            except Exception as e:
-                if os.path.exists(pdf_path):
-                    os.unlink(pdf_path)
-                return f"Failed to convert HTML: {str(e)}"
+                # Run in the directory containing the file
+                subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
+                             cwd=source_path.parent, check=True)
+                return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
+            except subprocess.CalledProcessError as e:
+                return f"❌ Error creating PDF: {e}"
         else:
-            return f"HTML printing requires WeasyPrint. {DEPENDENCIES['weasyprint']['install_hint']}"
-    
-    # Handle SVG files
-    elif mime == "image/svg+xml" or file_ext == ".svg":
-        if DEPENDENCIES["rsvg-convert"]["available"]:
-            # Convert SVG to PDF first
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_pdf:
-                pdf_path = tmp_pdf.name
+            return f"❌ Error: Cannot export {source_path.suffix} to PDF"
             
-            try:
-                # Use rsvg-convert to convert SVG to PDF
-                result = subprocess.run(
-                    ["rsvg-convert", "-f", "pdf", "-o", pdf_path, path],
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode != 0:
-                    return f"SVG to PDF conversion failed: {result.stderr}"
-                
-                # Print the PDF
-                cmd = ["lp", "-d", printer, pdf_path] if printer else ["lp", pdf_path]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                
-                # Clean up
-                os.unlink(pdf_path)
-                
-                if result.returncode == 0:
-                    job_id = result.stdout.strip().split()[-1]
-                    return f"Print job submitted: {job_id} (SVG rendered to PDF)"
-                else:
-                    return f"Print failed: {result.stderr}"
-                    
-            except Exception as e:
-                if os.path.exists(pdf_path):
-                    os.unlink(pdf_path)
-                return f"Failed to convert SVG: {str(e)}"
-        else:
-            return f"SVG printing requires rsvg-convert. {DEPENDENCIES['rsvg-convert']['install_hint']}"
-    
-    # For other files, let CUPS handle it directly
     else:
-        cmd = ["lp", "-d", printer, path] if printer else ["lp", path]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            job_id = result.stdout.strip().split()[-1]
-            return f"Print job submitted: {job_id} (type: {mime})"
-        else:
-            return f"Print failed: {result.stderr}"
+        return f"❌ Error: Unknown output action '{action}'. Available: print, export"
 
-
-import time
-import hashlib
-from datetime import datetime
-from collections import deque
-
-# Store file metadata for change detection
-file_metadata = {}
-
-# Track recent content hashes to detect redundant regeneration
-recent_content_hashes = deque(maxlen=10)  # Keep last 10 hashes
-saved_file_hashes = {}  # Map content hash to saved file path
-
-
-def detect_bibliography(content: str) -> bool:
-    """Detect if LaTeX content uses bibliography features.
-    
-    Returns True if the document contains:
-    - \bibliography{...}
-    - \addbibresource{...}
-    - \\cite{...}
-    - bibtex/biblatex package inclusion
-    """
-    bibliography_patterns = [
-        r'\\bibliography\{',
-        r'\\addbibresource\{',
-        r'\\cite\{',
-        r'\\citep\{',
-        r'\\citet\{',
-        r'\\usepackage.*\{.*bib(tex|latex)',
-        r'\\bibliographystyle\{',
-    ]
-    
-    for pattern in bibliography_patterns:
-        if re.search(pattern, content):
-            return True
-    return False
-
-
-def compile_latex_with_bibliography(tex_path: str, working_dir: str = None) -> tuple[bool, str]:
-    """Compile LaTeX document with proper bibliography handling.
-    
-    Args:
-        tex_path: Path to the .tex file
-        working_dir: Working directory for compilation (defaults to tex file directory)
-    
-    Returns:
-        Tuple of (success: bool, error_message: str)
-    """
-    if working_dir is None:
-        working_dir = str(Path(tex_path).parent)
-    
-    base_name = Path(tex_path).stem
-    
-    # First pass - generate .aux file
-    xelatex_cmd = [
-        "xelatex",
-        "-interaction=nonstopmode",
-        f"-jobname={base_name}",
-        "-output-directory", working_dir,
-        tex_path
-    ]
-    
-    # First XeLaTeX pass
-    result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
-    if result.returncode != 0:
-        log_path = os.path.join(working_dir, f"{base_name}.log")
-        return False, parse_latex_errors(result.stdout, result.stderr, log_path)
-    
-    # Check if .aux file exists and has citations
-    aux_path = os.path.join(working_dir, f"{base_name}.aux")
-    if os.path.exists(aux_path):
-        with open(aux_path, 'r', encoding='utf-8', errors='ignore') as f:
-            aux_content = f.read()
-        
-        # If citations exist, run bibtex
-        if '\\citation{' in aux_content or '\\bibdata{' in aux_content:
-            # Run BibTeX
-            bibtex_cmd = ["bibtex", base_name]
-            result = subprocess.run(bibtex_cmd, capture_output=True, text=True, cwd=working_dir)
-            
-            # BibTeX may have warnings but still succeed
-            if result.returncode > 1:  # 0 = success, 1 = warnings, >1 = errors
-                return False, f"BibTeX failed: {result.stderr}"
-            
-            # Second XeLaTeX pass - incorporate bibliography
-            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
-            if result.returncode != 0:
-                log_path = os.path.join(working_dir, f"{base_name}.log")
-                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
-            
-            # Third XeLaTeX pass - resolve all references
-            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
-            if result.returncode != 0:
-                log_path = os.path.join(working_dir, f"{base_name}.log")
-                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
-        else:
-            # No bibliography, just run second pass for TOC/references
-            result = subprocess.run(xelatex_cmd, capture_output=True, text=True, cwd=working_dir)
-            if result.returncode != 0:
-                log_path = os.path.join(working_dir, f"{base_name}.log")
-                return False, parse_latex_errors(result.stdout, result.stderr, log_path)
-    
-    return True, ""
-
-
-def parse_latex_errors(stdout: str, stderr: str, log_path: str = None) -> str:
-    """Parse LaTeX compilation errors and provide helpful installation instructions."""
-    error_msg = []
-    missing_packages = set()
-    error_details = []  # Store errors with line numbers and context
-    
-    # Check for missing package errors
-    for line in stdout.split('\n'):
-        if '! LaTeX Error: File' in line and 'not found' in line:
-            # Extract package name from error like "File `tikz.sty' not found"
-            import re
-            match = re.search(r"File `([^']+)' not found", line)
-            if match:
-                package = match.group(1).replace('.sty', '')
-                missing_packages.add(package)
-        elif 'Package' in line and 'was not found' in line:
-            # Handle other package not found formats
-            match = re.search(r"Package (\S+) was not found", line)
-            if match:
-                missing_packages.add(match.group(1))
-        elif line.startswith('!'):
-            error_msg.append(line)
-    
-    # Read log file for more details if available
-    if log_path and os.path.exists(log_path):
-        try:
-            with open(log_path, 'r') as log:
-                log_content = log.read()
-                lines = log_content.split('\n')
-                
-                # Look for missing package patterns in log
-                for match in re.finditer(r"! LaTeX Error: File `([^']+)' not found", log_content):
-                    package = match.group(1).replace('.sty', '')
-                    missing_packages.add(package)
-                
-                # Extract detailed error information with line numbers
-                i = 0
-                while i < len(lines):
-                    line = lines[i]
-                    
-                    # Look for errors starting with '!'
-                    if line.startswith('!'):
-                        error_info = {'error': line, 'context': []}
-                        
-                        # Look for line number on next lines
-                        j = i + 1
-                        while j < len(lines) and j < i + 10:
-                            if lines[j].startswith('l.'):
-                                # Extract line number and problematic code
-                                match = re.match(r'l\.(\d+)\s*(.*)', lines[j])
-                                if match:
-                                    error_info['line_num'] = int(match.group(1))
-                                    error_info['problem_code'] = match.group(2)
-                                    
-                                    # Get the continuation line if it exists
-                                    if j + 1 < len(lines) and lines[j + 1].strip():
-                                        error_info['problem_code'] += ' ' + lines[j + 1].strip()
-                                break
-                            j += 1
-                        
-                        # Add context lines
-                        error_info['context'] = lines[i:min(i+5, len(lines))]
-                        error_details.append(error_info)
-                    
-                    # Also look for "Undefined control sequence" patterns
-                    elif "Undefined control sequence" in line:
-                        error_info = {'error': "! Undefined control sequence", 'context': []}
-                        
-                        # The problematic line usually follows
-                        if i + 1 < len(lines):
-                            next_line = lines[i + 1]
-                            match = re.match(r'l\.(\d+)\s*(.*)', next_line)
-                            if match:
-                                error_info['line_num'] = int(match.group(1))
-                                error_info['problem_code'] = match.group(2)
-                                error_info['context'] = lines[i:min(i+4, len(lines))]
-                                error_details.append(error_info)
-                    
-                    i += 1
-        except:
-            pass
-    
-    # Build helpful error message
-    if missing_packages:
-        result = "LaTeX compilation failed due to missing packages:\n\n"
-        result += "Missing packages:\n"
-        for pkg in sorted(missing_packages):
-            result += f"  - {pkg}\n"
-        
-        result += f"\nTo install these packages on {DISTRO}:\n"
-        
-        # Package suggestions based on common mappings
-        package_suggestions = {
-            'tikz': PACKAGE_MAPPINGS.get('tikz', {}),
-            'graphicx': {'arch': 'texlive-pictures', 'debian': 'texlive-pictures', 'redhat': 'texlive-collection-pictures'},
-            'amsmath': {'arch': 'texlive-science', 'debian': 'texlive-science', 'redhat': 'texlive-collection-mathscience'},
-            'hyperref': {'arch': 'texlive-latexextra', 'debian': 'texlive-latex-extra', 'redhat': 'texlive-collection-latexextra'},
-            'babel': {'arch': 'texlive-langeuropean', 'debian': 'texlive-lang-european', 'redhat': 'texlive-collection-langeuropean'},
-        }
-        
-        # Provide installation commands
-        install_commands = set()
-        for pkg in missing_packages:
-            if pkg in package_suggestions:
-                cmd = get_install_command(package_suggestions[pkg])
-                install_commands.add(cmd)
-            else:
-                # Generic suggestion for unknown packages
-                if DISTRO == 'arch':
-                    install_commands.add(f"sudo pacman -S texlive-latexextra  # (may contain {pkg})")
-                elif DISTRO == 'debian':
-                    install_commands.add(f"sudo apt install texlive-latex-extra  # (may contain {pkg})")
-                elif DISTRO == 'redhat':
-                    install_commands.add(f"sudo dnf install texlive-collection-latexextra  # (may contain {pkg})")
-        
-        for cmd in sorted(install_commands):
-            result += f"  {cmd}\n"
-        
-        result += "\nAlternatively, install texlive-full for all packages (large download)."
-        
-        if error_details:
-            result += f"\n\nAdditional errors found:\n"
-            for err in error_details[:3]:
-                result += f"\n{err['error']}"
-                if 'line_num' in err:
-                    result += f" (Line {err['line_num']})"
-                if 'problem_code' in err:
-                    result += f"\n  Problem: {err['problem_code']}"
-                result += "\n"
-    elif error_details:
-        # Show detailed errors with line numbers
-        result = "LaTeX compilation failed with the following errors:\n"
-        
-        for i, err in enumerate(error_details[:5]):
-            result += f"\n{i+1}. {err['error']}"
-            if 'line_num' in err:
-                result += f" (Line {err['line_num']})"
-            if 'problem_code' in err:
-                result += f"\n   Problem: {err['problem_code']}"
-            result += "\n"
-        
-        if len(error_details) > 5:
-            result += f"\n... and {len(error_details)-5} more errors"
-        
-        # Add helpful hints for common errors
-        result += "\n\nCommon solutions:"
-        result += "\n- Undefined control sequence: Check for typos in LaTeX commands"
-        result += "\n- Missing $: Math mode delimiters are not balanced"  
-        result += "\n- File not found: Check file paths and package names"
-    elif error_msg:
-        result = "LaTeX compilation failed:\n" + '\n'.join(error_msg[:10])
-        if len(error_msg) > 10:
-            result += f"\n... and {len(error_msg)-10} more error lines"
-    else:
-        result = f"LaTeX compilation failed: {stderr if stderr else 'Unknown error'}"
-    
-    return result
 
 @mcp.tool()
-def check_document_status(file_path: str) -> str:
-    """Check if a document has been modified externally and show changes.
+def project(
+    action: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None
+) -> str:
+    """Organize documents into projects with intelligent structure.
     
-    Tracks document modification times and content hashes to detect external changes.
-    If changes are detected, shows a diff of what changed.
-    
-    Args:
-        file_path: Path to document to check
-    
-    Returns:
-        Status report including modification info and diff if changed
+    Actions:
+    - create: Create new project with AI-guided structure
+    - switch: Change active project
+    - list: Show all projects
+    - info: Get current project details
     """
-    # Handle path using project-aware resolution
-    path = resolve_project_path(file_path, create_dirs=False)
+    base_dir = Path.home() / "Documents" / "TeXFlow"
     
-    if not path.exists():
-        return f"File not found: {path}"
-    
-    try:
-        # Get current file stats
-        stat = os.stat(path)
-        current_mtime = stat.st_mtime
-        current_size = stat.st_size
-        
-        # Read current content for hash
-        with open(path, 'r', encoding='utf-8') as f:
-            current_content = f.read()
-        current_hash = hashlib.sha256(current_content.encode()).hexdigest()
-        
-        # Check if we have previous metadata
-        path_str = str(path)
-        if path_str in file_metadata:
-            prev_meta = file_metadata[path_str]
-            prev_mtime = prev_meta['mtime']
-            prev_hash = prev_meta['hash']
-            prev_content = prev_meta.get('content', '')
+    if action == "create":
+        if not name:
+            return "❌ Error: Name required for create action"
             
-            if current_hash != prev_hash:
-                # File has changed - generate diff
-                import difflib
-                
-                prev_lines = prev_content.splitlines(keepends=True)
-                curr_lines = current_content.splitlines(keepends=True)
-                
-                diff = difflib.unified_diff(
-                    prev_lines,
-                    curr_lines,
-                    fromfile=f"{path.name} (previous)",
-                    tofile=f"{path.name} (current)",
-                    fromfiledate=datetime.fromtimestamp(prev_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                    tofiledate=datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                    n=3
-                )
-                
-                diff_text = ''.join(diff)
-                
-                # Update metadata
-                file_metadata[path_str] = {
-                    'mtime': current_mtime,
-                    'size': current_size,
-                    'hash': current_hash,
-                    'content': current_content
+        project_dir = base_dir / name
+        if project_dir.exists():
+            return f"❌ Error: Project '{name}' already exists"
+            
+        try:
+            # Create project structure
+            (project_dir / "content").mkdir(parents=True)
+            (project_dir / "output" / "pdf").mkdir(parents=True)
+            (project_dir / "assets").mkdir(parents=True)
+            
+            # Create project info
+            info = {
+                "name": name,
+                "description": description or "",
+                "created": datetime.now().isoformat(),
+                "structure": {
+                    "content": "Source documents (Markdown, LaTeX)",
+                    "output/pdf": "Generated PDFs",
+                    "assets": "Images, data, references"
                 }
-                
-                return f"""File has been modified externally!
-
-Last checked: {datetime.fromtimestamp(prev_mtime).strftime('%Y-%m-%d %H:%M:%S')}
-Current time: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
-Size change: {prev_meta['size']} → {current_size} bytes
-
-Changes detected:
-{diff_text}"""
-            else:
-                return f"""No changes detected.
-                
-File: {path}
-Last modified: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
-Size: {current_size} bytes
-Status: Unchanged since last check"""
-        else:
-            # First time checking this file
-            file_metadata[path_str] = {
-                'mtime': current_mtime,
-                'size': current_size,
-                'hash': current_hash,
-                'content': current_content
             }
             
-            return f"""Now tracking document for changes.
+            (project_dir / ".texflow_project.json").write_text(json.dumps(info, indent=2))
+            SESSION_CONTEXT["current_project"] = name
             
-File: {path}
-Modified: {datetime.fromtimestamp(current_mtime).strftime('%Y-%m-%d %H:%M:%S')}
-Size: {current_size} bytes
-Hash: {current_hash[:16]}...
-Status: Initial tracking started"""
+            return f"✓ Project created: {project_dir}\n💡 Structure:\n  - content/ (for source files)\n  - output/pdf/ (for PDFs)\n  - assets/ (for images/data)\n💡 Next: document(action='create', content='...', path='content/intro.md')"
+        except Exception as e:
+            return f"❌ Error creating project: {e}"
             
-    except Exception as e:
-        return f"Error checking document status: {str(e)}"
-
-
-@mcp.tool()
-def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
-    """Read a document file with line numbers for editing.
-    
-    Similar to the system Read tool but specifically for documents.
-    Returns content in 'cat -n' format with line numbers.
-    
-    Args:
-        file_path: Path to document. Can be:
-            - Simple name: document.tex (reads from project or ~/Documents/)
-            - Full path: /home/user/Documents/file.tex
-            - Relative path: subfolder/file.tex (relative to project or Documents)
-        offset: Starting line number (default: 1)
-        limit: Number of lines to read (default: 50)
-    
-    Returns:
-        File content with line numbers in format: "   123[TAB]content"
-    """
-    # Handle path using project-aware resolution
-    path = resolve_project_path(file_path, create_dirs=False)
-    
-    if not path.exists():
-        return f"File not found: {path}"
-    
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        # Apply offset and limit
-        start = max(0, offset - 1)  # Convert to 0-based index
-        end = min(len(lines), start + limit)
-        
-        # Format with line numbers
-        result = []
-        for i in range(start, end):
-            # Format: right-aligned line number + tab + content
-            line_num = i + 1
-            # Remove newline for display, it will be in the content already
-            content = lines[i].rstrip('\n')
-            result.append(f"{line_num:6d}\t{content}")
-        
-        if not result:
-            return f"No content in range (lines {offset}-{offset+limit-1})"
-        
-        # Update tracking metadata when reading
-        stat = os.stat(path)
-        path_str = str(path)
-        file_metadata[path_str] = {
-            'mtime': stat.st_mtime,
-            'size': stat.st_size,
-            'hash': hashlib.sha256(''.join(lines).encode()).hexdigest(),
-            'content': ''.join(lines)
-        }
-        
-        return '\n'.join(result)
-        
-    except PermissionError:
-        return f"Permission denied: Cannot read {path}"
-    except Exception as e:
-        return f"Failed to read document: {str(e)}"
-
-
-@mcp.tool()
-def edit_document(file_path: str, old_string: str, new_string: str, expected_replacements: int = 1) -> str:
-    """Edit a document file by replacing exact string matches.
-    
-    Similar to the system Edit tool but specifically for documents.
-    Performs exact string replacement with occurrence validation.
-    
-    This tool supports collaborative editing by detecting external changes:
-    - Checks if the file has been modified since last read
-    - Shows a diff of external changes if detected
-    - Prevents accidental overwrites of user edits
-    - Updates tracking metadata after successful edits
-    
-    Args:
-        file_path: Path to document. Can be:
-            - Simple name: document.tex (edits in project or ~/Documents/)
-            - Full path: /home/user/Documents/file.tex
-            - Relative path: subfolder/file.tex (relative to project or Documents)
-        old_string: Exact string to find and replace
-        new_string: String to replace with
-        expected_replacements: Expected number of replacements (default: 1)
-    
-    Returns:
-        Success message with snippet of changes, or error description
-    """
-    # Validate inputs
-    if old_string == new_string:
-        return "Error: old_string and new_string are the same"
-    
-    # Handle path using project-aware resolution
-    path = resolve_project_path(file_path, create_dirs=False)
-    
-    if not path.exists():
-        return f"File not found: {path}"
-    
-    try:
-        # Check for external changes first
-        path_str = str(path)
-        if path_str in file_metadata:
-            stat = os.stat(path)
-            stored_meta = file_metadata[path_str]
+    elif action == "switch":
+        if not name:
+            return "❌ Error: Name required for switch action"
             
-            # Check if file was modified externally
-            if stat.st_mtime > stored_meta['mtime'] or stat.st_size != stored_meta['size']:
-                # Read current content
-                with open(path, 'r', encoding='utf-8') as f:
-                    current_content = f.read()
+        project_dir = base_dir / name
+        if not project_dir.exists():
+            return f"❌ Error: Project '{name}' not found"
+            
+        SESSION_CONTEXT["current_project"] = name
+        return f"✓ Switched to project: {name}"
+        
+    elif action == "list":
+        if not base_dir.exists():
+            return "No projects found"
+            
+        projects = []
+        for p in base_dir.iterdir():
+            if p.is_dir() and (p / ".texflow_project.json").exists():
+                projects.append(p.name)
                 
-                # Check if content actually changed
-                current_hash = hashlib.sha256(current_content.encode()).hexdigest()
-                if current_hash != stored_meta['hash']:
-                    # Generate diff
-                    stored_lines = stored_meta['content'].splitlines(keepends=True)
-                    current_lines = current_content.splitlines(keepends=True)
-                    
-                    diff = list(difflib.unified_diff(
-                        stored_lines,
-                        current_lines,
-                        fromfile=f"{path} (last read)",
-                        tofile=f"{path} (current)",
-                        n=3
-                    ))
-                    
-                    diff_text = ''.join(diff) if diff else "No line-by-line differences found"
-                    
-                    return (f"Error: File has been modified externally since last read!\n\n"
-                           f"External changes detected:\n{diff_text}\n\n"
-                           f"Please use read_document to get the latest version before editing.")
+        if not projects:
+            return "No projects found"
+            
+        current = SESSION_CONTEXT.get("current_project")
+        result = "Projects:\n"
+        for p in sorted(projects):
+            marker = " (current)" if p == current else ""
+            result += f"  - {p}{marker}\n"
+        return result
         
-        # Read the file
-        with open(path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Count occurrences
-        count = content.count(old_string)
-        
-        if count == 0:
-            return f"String not found in file: {repr(old_string)}"
-        
-        if count != expected_replacements:
-            return f"Expected {expected_replacements} replacement(s), but found {count} occurrence(s)"
-        
-        # Perform replacement
-        new_content = content.replace(old_string, new_string)
-        
-        # Write back
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(new_content)
-        
-        # Update tracking metadata after successful edit
-        stat = os.stat(path)
-        file_metadata[path_str] = {
-            'mtime': stat.st_mtime,
-            'size': stat.st_size,
-            'hash': hashlib.sha256(new_content.encode()).hexdigest(),
-            'content': new_content
-        }
-        
-        # Return success with context
-        # Find first replacement location for context
-        pos = content.find(old_string)
-        start = max(0, pos - 50)
-        end = min(len(new_content), pos + len(new_string) + 50)
-        snippet = new_content[start:end]
-        
-        return f"Successfully replaced {count} occurrence(s) in {path}\nContext: ...{snippet}..."
-        
-    except PermissionError:
-        return f"Permission denied: Cannot write to {path}"
-    except Exception as e:
-        return f"Failed to edit document: {str(e)}"
-
-
-# Document Organization Tools
-
-@mcp.tool()
-def archive_document(path: str, reason: str = "manual") -> str:
-    """Archive (soft delete) a document to hidden .texflow_archive folder.
-    
-    The document is moved to a timestamped archive, preserving it for future recovery.
-    
-    Args:
-        path: Path to document to archive
-        reason: Reason for archiving (manual, replaced, outdated, etc.)
-    """
-    result = document_manager.archive_document(path, reason)
-    
-    if result["success"]:
-        return f"Archived {Path(path).name} to {result['archive_name']}"
     else:
-        return f"Archive failed: {result['error']}"
+        return f"❌ Error: Unknown project action '{action}'. Available: create, switch, list, info"
 
 
 @mcp.tool()
-def list_archived_documents(directory: str = "") -> str:
-    """List all archived documents in a directory.
+def printer(
+    action: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    location: Optional[str] = None
+) -> str:
+    """Manage printing hardware and configuration.
     
-    Args:
-        directory: Directory to check (defaults to current project or Documents)
+    Actions:
+    - list: Show all available printers with status
+    - info: Get detailed printer information
+    - set_default: Change the default printer
+    - enable: Allow printer to accept jobs
+    - disable: Stop printer from accepting jobs
+    - update: Update printer description/location
     """
-    if not directory:
-        if current_project:
-            directory = str(get_project_base() / current_project)
-        else:
-            directory = str(Path.home() / "Documents")
-    
-    archives = document_manager.list_archived(directory)
-    
-    if not archives:
-        return "No archived documents found"
-    
-    output = f"Found {len(archives)} archived document(s):\n"
-    for arch in archives:
-        size_kb = arch.get("size", 0) / 1024
-        output += f"\n- {arch.get('original_name', 'unknown')}"
-        output += f"\n  Archived: {arch.get('archived_at', 'unknown')}"
-        output += f"\n  Reason: {arch.get('reason', 'unknown')}"
-        output += f"\n  Size: {size_kb:.1f} KB"
-    
-    return output
-
-
-@mcp.tool()
-def restore_archived_document(archive_path: str, restore_path: Optional[str] = None) -> str:
-    """Restore an archived document.
-    
-    Args:
-        archive_path: Path to archived document
-        restore_path: Where to restore (defaults to original location)
-    """
-    result = document_manager.restore_document(archive_path, restore_path)
-    
-    if result["success"]:
-        return f"Restored document to {result['restored_to']}"
+    if action == "list":
+        try:
+            result = subprocess.run(["lpstat", "-p", "-d"], capture_output=True, text=True, check=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            return f"❌ Error listing printers: {e.stderr}"
+            
+    elif action == "set_default":
+        if not name:
+            return "❌ Error: Printer name required for set_default action"
+        try:
+            subprocess.run(["lpoptions", "-d", name], check=True)
+            SESSION_CONTEXT["default_printer"] = name
+            return f"✓ Default printer set to: {name}"
+        except subprocess.CalledProcessError as e:
+            return f"❌ Error setting default printer: {e}"
+            
     else:
-        return f"Restore failed: {result['error']}"
+        return f"❌ Error: Unknown printer action '{action}'. Available: list, set_default"
 
 
 @mcp.tool()
-def find_document_versions(filename: str, directory: str = "") -> str:
-    """Find all versions of a document (current and archived).
+def discover(
+    action: str,
+    folder: Optional[str] = None,
+    style: Optional[str] = None
+) -> str:
+    """Find documents, fonts, and system capabilities.
     
-    Args:
-        filename: Base filename to search for
-        directory: Directory to search (defaults to current project or Documents)
+    Actions:
+    - documents: List documents in project or folder
+    - fonts: Browse available fonts for LaTeX
+    - capabilities: Check system dependencies
     """
-    if not directory:
-        if current_project:
-            directory = str(get_project_base() / current_project)
+    if action == "documents":
+        # List documents
+        if SESSION_CONTEXT.get("current_project"):
+            base_path = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"] / "content"
         else:
-            directory = str(Path.home() / "Documents")
-    
-    versions = document_manager.find_versions(filename, directory)
-    
-    if not versions:
-        return f"No versions of '{filename}' found"
-    
-    output = f"Found {len(versions)} version(s) of '{filename}':\n"
-    for ver in versions:
-        size_kb = ver["size"] / 1024
-        output += f"\n- {ver['name']} ({ver['type']})"
-        output += f"\n  Modified: {ver['modified']}"
-        output += f"\n  Size: {size_kb:.1f} KB"
-        output += f"\n  Path: {ver['path']}"
-    
-    return output
-
-
-@mcp.tool()
-def clean_workspace(directory: str = "", pattern: str = "*_old*") -> str:
-    """Archive multiple files matching a pattern.
-    
-    Useful for cleaning up old versions, drafts, or temporary files.
-    
-    Args:
-        directory: Directory to clean (defaults to current project or Documents)
-        pattern: Glob pattern for files to archive (default: *_old*)
-    """
-    if not directory:
-        if current_project:
-            directory = str(get_project_base() / current_project)
-        else:
-            directory = str(Path.home() / "Documents")
-    
-    result = document_manager.clean_workspace(directory, pattern)
-    
-    if result["success"]:
-        return f"Archived {result['archived_count']} file(s) matching '{pattern}'"
+            base_path = Path.home() / "Documents"
+            
+        if folder:
+            base_path = base_path / folder
+            
+        if not base_path.exists():
+            return f"❌ Error: Directory {base_path} does not exist"
+            
+        files = []
+        for ext in ["*.pdf", "*.md", "*.tex"]:
+            files.extend(base_path.glob(ext))
+            
+        if not files:
+            return f"No documents found in {base_path}"
+            
+        result = f"Documents in {base_path}:\n"
+        for f in sorted(files):
+            result += f"  - {f.name}\n"
+        return result
+        
+    elif action == "capabilities":
+        caps = ["✓ CUPS printing system"]
+        
+        # Check for pandoc
+        try:
+            subprocess.run(["pandoc", "--version"], capture_output=True, check=True)
+            caps.append("✓ Pandoc (Markdown conversion)")
+        except:
+            caps.append("✗ Pandoc not found")
+            
+        # Check for XeLaTeX
+        try:
+            subprocess.run(["xelatex", "--version"], capture_output=True, check=True)
+            caps.append("✓ XeLaTeX (LaTeX compilation)")
+        except:
+            caps.append("✗ XeLaTeX not found")
+            
+        return "System Capabilities:\n" + "\n".join(caps)
+        
     else:
-        errors = "\n".join(result.get("errors", []))
-        return f"Cleanup completed with errors:\n{errors}"
+        return f"❌ Error: Unknown discover action '{action}'. Available: documents, capabilities"
 
 
-# This is needed for FastMCP to find the server
-server = mcp
+@mcp.tool()
+def archive(
+    action: str,
+    path: Optional[str] = None,
+    pattern: Optional[str] = None
+) -> str:
+    """Manage document versions and history with soft delete functionality.
+    
+    Actions:
+    - archive: Soft delete a document (preserves in hidden folder)
+    - cleanup: Archive multiple files matching a pattern
+    - versions: Find all versions of a document
+    """
+    if action == "archive":
+        if not path:
+            return "❌ Error: Path required for archive action"
+            
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"❌ Error: File not found: {file_path}"
+            
+        # Create archive directory
+        archive_dir = file_path.parent / ".texflow_archive"
+        archive_dir.mkdir(exist_ok=True)
+        
+        # Move to archive with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_path = archive_dir / f"{timestamp}_{file_path.name}"
+        
+        try:
+            file_path.rename(archive_path)
+            return f"✓ Archived: {file_path.name} → .texflow_archive/\n💡 Restore with: archive(action='restore', path='{archive_path}')"
+        except Exception as e:
+            return f"❌ Error archiving: {e}"
+            
+    elif action == "cleanup":
+        if not pattern:
+            pattern = "*_old*"
+            
+        # Find files matching pattern
+        base_path = Path.cwd()
+        if SESSION_CONTEXT.get("current_project"):
+            base_path = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"] / "content"
+            
+        files = list(base_path.glob(pattern))
+        if not files:
+            return f"No files found matching pattern: {pattern}"
+            
+        archived = []
+        for f in files:
+            if f.is_file():
+                archive_dir = f.parent / ".texflow_archive"
+                archive_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                archive_path = archive_dir / f"{timestamp}_{f.name}"
+                f.rename(archive_path)
+                archived.append(f.name)
+                
+        return f"✓ Archived {len(archived)} files: {', '.join(archived)}"
+        
+    else:
+        return f"❌ Error: Unknown archive action '{action}'. Available: archive, cleanup, versions"
+
+
+@mcp.tool()
+def workflow(
+    action: str,
+    task: Optional[str] = None
+) -> str:
+    """Get intelligent guidance and workflow automation.
+    
+    Actions:
+    - suggest: Get workflow recommendations for a task
+    - next_steps: See contextual next actions
+    """
+    if action == "suggest":
+        if not task:
+            return "❌ Error: Task description required"
+            
+        task_lower = task.lower()
+        
+        if any(word in task_lower for word in ["paper", "research", "academic", "thesis"]):
+            return """📚 Academic Paper Workflow:
+1. project(action="create", name="my-paper", description="Research paper on...")
+2. document(action="create", content="@article{...}", path="content/refs.bib")
+3. document(action="create", content="\\documentclass{article}...", path="content/paper.tex")
+4. output(action="export", source="content/paper.tex")
+5. output(action="print", source="output/pdf/paper.pdf")"""
+            
+        elif any(word in task_lower for word in ["report", "documentation"]):
+            return """📄 Report Workflow:
+1. document(action="create", content="# Report Title", intent="report")
+2. document(action="edit", path="report.md", old_string="...", new_string="...")
+3. output(action="export", source="report.md", output_path="report.pdf")"""
+            
+        else:
+            return f"""💡 General Workflow for '{task}':
+1. document(action="create", content="...", intent="{task}")
+2. Edit as needed
+3. output(action="export", source="...")"""
+            
+    elif action == "next_steps":
+        current_project = SESSION_CONTEXT.get("current_project")
+        if current_project:
+            return f"""💡 Next steps in project '{current_project}':
+→ Create document: document(action="create", content="...", path="content/...")
+→ List documents: discover(action="documents")
+→ Export to PDF: output(action="export", source="...")"""
+        else:
+            return """💡 Getting started:
+→ Create project: project(action="create", name="...", description="...")
+→ List printers: printer(action="list")
+→ Check system: discover(action="capabilities")"""
+            
+    else:
+        return f"❌ Error: Unknown workflow action '{action}'. Available: suggest, next_steps"
+
 
 def main():
-    """Main entry point for the cups-mcp server."""
+    """Run the unified MCP server."""
     mcp.run()
+
 
 if __name__ == "__main__":
     main()
