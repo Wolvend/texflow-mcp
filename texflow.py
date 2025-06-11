@@ -1814,8 +1814,9 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
             content: LaTeX content to convert (DO NOT use if you already saved the file)
             file_path: Path to existing LaTeX file (USE THIS if you saved with save_latex)
             output_path: Path where PDF should be saved. Can be:
+                - Simple name: report.pdf (saves to project/output/pdf/ or ~/Documents/)
+                - Relative path: final/report.pdf (relative to project)
                 - Full path: /home/user/Documents/file.pdf
-                - Relative to Documents: report.pdf (saves to ~/Documents/report.pdf)
                 - With ~: ~/Downloads/file.pdf
             title: Document title (optional, used in jobname)
         """
@@ -1867,30 +1868,27 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
                 tex_path = f.name
             temp_file = True
         
-        # Handle output path expansion
-        output_path = str(Path(output_path).expanduser())
+        # Handle output path with project resolution
+        output_path = resolve_project_path(output_path, create_dirs=True)
         
-        # If no directory specified, default to Documents folder
-        if "/" not in output_path:
-            documents_dir = Path.home() / "Documents"
-            try:
-                documents_dir.mkdir(exist_ok=True)
-            except Exception as e:
-                return f"Failed to create Documents directory: {str(e)}"
-            output_path = str(documents_dir / output_path)
+        # If we have a project and it's a simple filename, put in output/pdf folder
+        if current_project and "/" not in str(output_path.name) and not str(output_path).startswith("~"):
+            output_dir = get_project_base() / current_project / "output" / "pdf"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / output_path.name
         
         # Ensure output path ends with .pdf
-        if not output_path.endswith('.pdf'):
-            output_path += '.pdf'
+        if not str(output_path).endswith('.pdf'):
+            output_path = Path(str(output_path) + '.pdf')
         
         # Check if file already exists
-        if Path(output_path).exists():
+        if output_path.exists():
             # Generate unique filename
-            base = Path(output_path).stem
-            dir_path = Path(output_path).parent
+            base = output_path.stem
+            dir_path = output_path.parent
             counter = 1
-            while Path(output_path).exists():
-                output_path = str(dir_path / f"{base}_{counter}.pdf")
+            while output_path.exists():
+                output_path = dir_path / f"{base}_{counter}.pdf"
                 counter += 1
         
         try:
@@ -1901,7 +1899,7 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
             
             # Move the generated PDF to the desired location
             generated_pdf = tex_path.replace('.tex', '.pdf')
-            shutil.move(generated_pdf, output_path)
+            shutil.move(generated_pdf, str(output_path))
             
             return f"PDF saved successfully to: {output_path}"
             
