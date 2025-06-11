@@ -727,6 +727,32 @@ def project_info() -> str:
 
 
 @mcp.tool()
+def close_project() -> str:
+    """Close the current project and return to default Documents mode.
+    
+    After closing a project, all file operations will default to ~/Documents/
+    instead of the project directory.
+    
+    Returns:
+        Success message confirming project closure
+    """
+    global current_project
+    
+    if not current_project:
+        return "No project is currently active."
+    
+    closed_project = current_project
+    current_project = None
+    
+    # Update config file to remove active project
+    config = load_texflow_config()
+    config['active_project'] = None
+    save_texflow_config(config)
+    
+    return f"Closed project '{closed_project}'. File operations will now use ~/Documents/ by default."
+
+
+@mcp.tool()
 def suggest_document_workflow(user_request: str) -> str:
     """Analyze user request and suggest appropriate document workflow.
     
@@ -1293,27 +1319,16 @@ if DEPENDENCIES["pandoc"]["available"]:
         Returns:
             Success message with output file path, or error description
         """
-        # Handle input file path
-        input_path = Path(file_path).expanduser()
-        
-        # If no directory specified, check Documents folder
-        if not input_path.is_absolute() and "/" not in str(file_path):
-            input_path = Path.home() / "Documents" / file_path
-        elif not input_path.is_absolute():
-            # Relative path within Documents
-            input_path = Path.home() / "Documents" / file_path
+        # Handle input file path using project-aware resolution
+        input_path = resolve_project_path(file_path, create_dirs=False)
         
         if not input_path.exists():
             return f"File not found: {input_path}"
         
         # Handle output path
         if output_path:
-            output_path = str(Path(output_path).expanduser())
-            # If no directory specified, default to Documents folder
-            if "/" not in output_path:
-                documents_dir = Path.home() / "Documents"
-                documents_dir.mkdir(exist_ok=True)
-                output_path = str(documents_dir / output_path)
+            # Use project-aware resolution for output path
+            output_path = str(resolve_project_path(output_path, create_dirs=True))
         else:
             # Use same location as input file, just change extension
             output_path = str(input_path.with_suffix('.tex'))
@@ -2443,15 +2458,8 @@ def check_document_status(file_path: str) -> str:
     Returns:
         Status report including modification info and diff if changed
     """
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
@@ -2547,24 +2555,17 @@ def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
     
     Args:
         file_path: Path to document. Can be:
-            - Simple name: document.tex (reads from ~/Documents/)
+            - Simple name: document.tex (reads from project or ~/Documents/)
             - Full path: /home/user/Documents/file.tex
-            - Relative to Documents: subfolder/file.tex
+            - Relative path: subfolder/file.tex (relative to project or Documents)
         offset: Starting line number (default: 1)
         limit: Number of lines to read (default: 50)
     
     Returns:
         File content with line numbers in format: "   123[TAB]content"
     """
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
@@ -2622,9 +2623,9 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
     
     Args:
         file_path: Path to document. Can be:
-            - Simple name: document.tex (edits in ~/Documents/)
+            - Simple name: document.tex (edits in project or ~/Documents/)
             - Full path: /home/user/Documents/file.tex
-            - Relative to Documents: subfolder/file.tex
+            - Relative path: subfolder/file.tex (relative to project or Documents)
         old_string: Exact string to find and replace
         new_string: String to replace with
         expected_replacements: Expected number of replacements (default: 1)
@@ -2636,15 +2637,8 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
     if old_string == new_string:
         return "Error: old_string and new_string are the same"
     
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
