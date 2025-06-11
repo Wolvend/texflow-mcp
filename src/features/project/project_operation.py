@@ -28,6 +28,7 @@ class ProjectOperation:
             - switch: Switch to different project
             - list: List all projects
             - info: Get current project info
+            - close: Close current project and return to Documents mode
             - archive: Archive a project (future)
         """
         action_map = {
@@ -35,6 +36,7 @@ class ProjectOperation:
             "switch": self._switch_project,
             "list": self._list_projects,
             "info": self._project_info,
+            "close": self._close_project,
             "archive": self._archive_project
         }
         
@@ -70,6 +72,11 @@ class ProjectOperation:
                     "description": "Get information about current project",
                     "required_params": [],
                     "optional_params": ["detailed"]
+                },
+                "close": {
+                    "description": "Close current project and return to Documents mode",
+                    "required_params": [],
+                    "optional_params": []
                 },
                 "archive": {
                     "description": "Archive a project",
@@ -222,6 +229,36 @@ class ProjectOperation:
                 }
             
             return response
+            
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def _close_project(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Close the current project."""
+        try:
+            result = self.texflow.close_project()
+            
+            # Check if no project was active
+            if "no project is currently active" in result.lower():
+                return {
+                    "success": True,
+                    "action": "close",
+                    "message": "No project was active",
+                    "hint": "File operations already use ~/Documents/ by default"
+                }
+            
+            # Extract closed project name from result
+            import re
+            name_match = re.search(r"Closed project '(.+?)'", result)
+            project_name = name_match.group(1) if name_match else "Unknown"
+            
+            return {
+                "success": True,
+                "action": "close",
+                "closed_project": project_name,
+                "message": f"Project '{project_name}' closed successfully",
+                "hint": "File operations will now use ~/Documents/ by default"
+            }
             
         except Exception as e:
             return {"error": str(e)}

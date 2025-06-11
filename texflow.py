@@ -727,6 +727,32 @@ def project_info() -> str:
 
 
 @mcp.tool()
+def close_project() -> str:
+    """Close the current project and return to default Documents mode.
+    
+    After closing a project, all file operations will default to ~/Documents/
+    instead of the project directory.
+    
+    Returns:
+        Success message confirming project closure
+    """
+    global current_project
+    
+    if not current_project:
+        return "No project is currently active."
+    
+    closed_project = current_project
+    current_project = None
+    
+    # Update config file to remove active project
+    config = load_texflow_config()
+    config['active_project'] = None
+    save_texflow_config(config)
+    
+    return f"Closed project '{closed_project}'. File operations will now use ~/Documents/ by default."
+
+
+@mcp.tool()
 def suggest_document_workflow(user_request: str) -> str:
     """Analyze user request and suggest appropriate document workflow.
     
@@ -915,15 +941,8 @@ if DEPENDENCIES["pandoc"]["available"] and DEPENDENCIES["xelatex"]["available"] 
         
         # Handle file_path input
         if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
+            # Use project-aware path resolution
+            path = resolve_project_path(file_path, create_dirs=False)
             
             if not path.exists():
                 return f"File not found: {path}"
@@ -1046,15 +1065,8 @@ if DEPENDENCIES["xelatex"]["available"] and DEPENDENCIES["latex_fonts"]["availab
         
         # Handle file_path input
         if file_path:
-            # Expand path
-            path = Path(file_path).expanduser()
-            
-            # If no directory specified, check Documents folder
-            if not path.is_absolute() and "/" not in str(file_path):
-                path = Path.home() / "Documents" / file_path
-            elif not path.is_absolute():
-                # Relative path within Documents
-                path = Path.home() / "Documents" / file_path
+            # Use project-aware path resolution
+            path = resolve_project_path(file_path, create_dirs=False)
             
             if not path.exists():
                 return f"File not found: {path}"
@@ -1293,27 +1305,16 @@ if DEPENDENCIES["pandoc"]["available"]:
         Returns:
             Success message with output file path, or error description
         """
-        # Handle input file path
-        input_path = Path(file_path).expanduser()
-        
-        # If no directory specified, check Documents folder
-        if not input_path.is_absolute() and "/" not in str(file_path):
-            input_path = Path.home() / "Documents" / file_path
-        elif not input_path.is_absolute():
-            # Relative path within Documents
-            input_path = Path.home() / "Documents" / file_path
+        # Handle input file path using project-aware resolution
+        input_path = resolve_project_path(file_path, create_dirs=False)
         
         if not input_path.exists():
             return f"File not found: {input_path}"
         
         # Handle output path
         if output_path:
-            output_path = str(Path(output_path).expanduser())
-            # If no directory specified, default to Documents folder
-            if "/" not in output_path:
-                documents_dir = Path.home() / "Documents"
-                documents_dir.mkdir(exist_ok=True)
-                output_path = str(documents_dir / output_path)
+            # Use project-aware resolution for output path
+            output_path = str(resolve_project_path(output_path, create_dirs=True))
         else:
             # Use same location as input file, just change extension
             output_path = str(input_path.with_suffix('.tex'))
@@ -1554,15 +1555,8 @@ def validate_latex(content: Optional[str] = None, file_path: Optional[str] = Non
     
     # Handle file_path input
     if file_path:
-        # Expand path
-        path = Path(file_path).expanduser()
-        
-        # If no directory specified, check Documents folder
-        if not path.is_absolute() and "/" not in str(file_path):
-            path = Path.home() / "Documents" / file_path
-        elif not path.is_absolute():
-            # Relative path within Documents
-            path = Path.home() / "Documents" / file_path
+        # Use project-aware path resolution
+        path = resolve_project_path(file_path, create_dirs=False)
         
         if not path.exists():
             return f"File not found: {path}"
@@ -1934,18 +1928,27 @@ else:
 
 @mcp.tool()
 def list_documents(folder: str = "") -> str:
-    """List all printable files in Documents folder or subfolder.
+    """List all printable files in project directory or Documents folder.
     
     IMPORTANT for AI agents: Use this tool to find files when the user provides
     partial or approximate filenames. This tool shows ALL file types including
     PDF, Markdown, LaTeX, HTML, SVG, images, and other documents.
     
+    When a project is active, lists files in the project directory.
+    When no project is active, lists files in ~/Documents/.
+    
     Args:
-        folder: Subfolder within Documents (optional, e.g., "reports" for ~/Documents/reports)
+        folder: Subfolder to list (optional, e.g., "reports" or "content")
     """
-    documents_dir = Path.home() / "Documents"
+    # Use project-aware resolution for the base directory
     if folder:
-        documents_dir = documents_dir / folder
+        documents_dir = resolve_project_path(folder, create_dirs=False)
+    else:
+        # If no folder specified, use the project root or Documents
+        if current_project:
+            documents_dir = get_project_base() / current_project
+        else:
+            documents_dir = Path.home() / "Documents"
     
     if not documents_dir.exists():
         return f"Directory not found: {documents_dir}"
@@ -1999,29 +2002,35 @@ def list_documents(folder: str = "") -> str:
 
 @mcp.tool()
 def print_from_documents(filename: str, printer: Optional[str] = None, folder: str = "") -> str:
-    """Print a PDF or Markdown file from Documents folder.
+    """Print a PDF or Markdown file from project directory or Documents folder.
     
     IMPORTANT printer selection logic for AI agents:
     1. First print: Check if default printer exists. If not, ask which printer to use.
     2. Remember the chosen printer for the rest of the session.
     3. Only change printer if user explicitly requests a different one.
     
+    When a project is active, looks for files in the project directory.
+    When no project is active, looks for files in ~/Documents/.
+    
     Args:
         filename: Name of file to print (e.g., "report.pdf" or "notes.md")
         printer: Printer name (optional, uses default if not specified)
-        folder: Subfolder within Documents (optional, e.g., "reports")
+        folder: Subfolder to look in (optional, e.g., "reports" or "output/pdf")
     """
-    documents_dir = Path.home() / "Documents"
+    # Construct the full relative path
     if folder:
-        documents_dir = documents_dir / folder
+        relative_path = f"{folder}/{filename}"
+    else:
+        relative_path = filename
     
-    file_path = documents_dir / filename
+    # Use project-aware resolution
+    file_path = resolve_project_path(relative_path, create_dirs=False)
     
     if not file_path.exists():
         # Try with common extensions if not provided
         if not file_path.suffix:
             for ext in ['.pdf', '.md', '.tex']:
-                test_path = documents_dir / f"{filename}{ext}"
+                test_path = resolve_project_path(f"{relative_path}{ext}", create_dirs=False)
                 if test_path.exists():
                     file_path = test_path
                     break
@@ -2443,15 +2452,8 @@ def check_document_status(file_path: str) -> str:
     Returns:
         Status report including modification info and diff if changed
     """
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
@@ -2547,24 +2549,17 @@ def read_document(file_path: str, offset: int = 1, limit: int = 50) -> str:
     
     Args:
         file_path: Path to document. Can be:
-            - Simple name: document.tex (reads from ~/Documents/)
+            - Simple name: document.tex (reads from project or ~/Documents/)
             - Full path: /home/user/Documents/file.tex
-            - Relative to Documents: subfolder/file.tex
+            - Relative path: subfolder/file.tex (relative to project or Documents)
         offset: Starting line number (default: 1)
         limit: Number of lines to read (default: 50)
     
     Returns:
         File content with line numbers in format: "   123[TAB]content"
     """
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
@@ -2622,9 +2617,9 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
     
     Args:
         file_path: Path to document. Can be:
-            - Simple name: document.tex (edits in ~/Documents/)
+            - Simple name: document.tex (edits in project or ~/Documents/)
             - Full path: /home/user/Documents/file.tex
-            - Relative to Documents: subfolder/file.tex
+            - Relative path: subfolder/file.tex (relative to project or Documents)
         old_string: Exact string to find and replace
         new_string: String to replace with
         expected_replacements: Expected number of replacements (default: 1)
@@ -2636,15 +2631,8 @@ def edit_document(file_path: str, old_string: str, new_string: str, expected_rep
     if old_string == new_string:
         return "Error: old_string and new_string are the same"
     
-    # Handle path expansion
-    path = Path(file_path).expanduser()
-    
-    # If no directory specified, default to Documents folder
-    if not path.is_absolute() and "/" not in str(file_path):
-        path = Path.home() / "Documents" / file_path
-    elif not path.is_absolute():
-        # Relative path within Documents
-        path = Path.home() / "Documents" / file_path
+    # Handle path using project-aware resolution
+    path = resolve_project_path(file_path, create_dirs=False)
     
     if not path.exists():
         return f"File not found: {path}"
