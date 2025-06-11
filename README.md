@@ -43,6 +43,20 @@ use_project("thesis-2024")
 list_projects()  # See all your document projects
 ```
 
+## 🎯 Semantic Tool Organization (NEW!)
+
+TeXFlow's 30+ tools are organized into 7 semantic operations for easier discovery and use:
+
+- **📄 Document** - Create, edit, convert, and validate documents
+- **🖨️ Output** - Print and export to various formats
+- **📁 Project** - Organize work into logical units
+- **🖨️ Printer** - Manage printing hardware
+- **🔍 Discover** - Find documents, fonts, and resources
+- **📦 Archive** - Manage versions and document history
+- **💡 Workflow** - Get guidance and automation
+
+See [Enhanced Tool Grouping](docs/ENHANCED_TOOL_GROUPING.md) for details.
+
 ## Features
 
 ### 📁 Project-Based Document Management (NEW!)
@@ -81,6 +95,14 @@ list_projects()  # See all your document projects
 - **Prevent conflicts** between multiple editors (human or AI)
 - Check document status to see what changed since last read
 - Enable safe concurrent editing workflows
+
+### Document Archiving & Version Management 📦
+- Archive (soft delete) documents to hidden .texflow_archive folder
+- List and browse archived documents
+- Restore archived documents to original or new location
+- Find all versions of a document (current and archived)
+- Bulk cleanup with pattern matching (e.g., archive all *_old* files)
+- Preserves document history with timestamps
 
 ### Smart Features
 - Dependency checking at startup
@@ -731,7 +753,8 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 
 ## Documentation
 
-- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 21 tools
+- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 30+ tools
+- 🎯 [Enhanced Tool Grouping](docs/ENHANCED_TOOL_GROUPING.md) - Semantic organization of tools
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
 

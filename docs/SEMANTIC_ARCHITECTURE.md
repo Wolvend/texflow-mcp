@@ -2,7 +2,7 @@
 
 ## Overview
 
-TeXFlow's semantic architecture transforms 27+ individual MCP tools into 6 intelligent operations that understand user intent rather than requiring technical knowledge of document formats and workflows.
+TeXFlow's semantic architecture transforms 30+ individual MCP tools into 7 intelligent operations that understand user intent rather than requiring technical knowledge of document formats and workflows.
 
 ## Core Principles
 
@@ -15,7 +15,7 @@ TeXFlow's semantic architecture transforms 27+ individual MCP tools into 6 intel
 
 ### 1. Semantic Operations
 
-The system provides 6 high-level operations that bundle related functionality:
+The system provides 7 high-level operations that bundle related functionality:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -37,6 +37,9 @@ The system provides 6 high-level operations that bundle related functionality:
 ├──────────────┼────────────────────────┼────────────────────┤
 │  discover    │  documents, fonts,     │  list_documents,   │
 │              │  capabilities          │  list_fonts        │
+├──────────────┼────────────────────────┼────────────────────┤
+│  archive     │  archive, restore,     │  archive_document, │
+│              │  versions, cleanup     │  *_archived_*      │
 ├──────────────┼────────────────────────┼────────────────────┤
 │  workflow    │  suggest, guide,       │  suggest_document_ │
 │              │  next_steps            │  workflow          │
