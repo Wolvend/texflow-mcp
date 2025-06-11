@@ -12,12 +12,12 @@ dependencies = [
 ]
 
 [project.scripts]
-texflow = "texflow:main"
+texflow = "texflow_semantic_unified:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.features", "src.features.document", "src.features.organizer", "src.features.output", "src.features.project"]
-py-modules = ["texflow"]
+packages = ["src", "src.core", "src.features", "src.features.document", "src.features.organizer", "src.features.output", "src.features.project", "src.features.archive"]
+py-modules = ["texflow", "texflow_semantic_unified"]

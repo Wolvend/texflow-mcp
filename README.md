@@ -236,43 +236,73 @@ uv run texflow
 
 ## Usage
 
-### Quick Start - Essential Tools
+### Quick Start - 7 Unified Tools
 
-For most document workflows, you'll primarily use these tools:
+TeXFlow provides 7 semantic tools that intelligently guide your document workflow:
 
-#### Basic Printing
-- `print_text` - Print plain text directly
-- `print_file` - Print any file (PDF, images, etc.)
-- `list_printers` - See available printers
+#### 1. `document` - Create, edit, and transform documents
+```python
+# Create with auto-format detection
+document(action="create", content="# My Paper", intent="research")
 
-#### Document Creation & Publishing  
-- `save_latex` - Create LaTeX documents (research papers, reports)
-- `save_markdown` - Create Markdown documents (notes, documentation)
-- `latex_to_pdf` - Convert LaTeX to PDF
-- `print_latex` - Compile and print LaTeX documents
+# Convert existing files (don't recreate!)
+document(action="convert", source="notes.md", target_format="latex")
 
-#### Document Editing
-- `read_document` - Read files with line numbers
-- `edit_document` - Make precise edits to documents
-
-#### Font Discovery (New!)
-- `list_available_fonts` - Find fonts for your LaTeX documents
-
-#### Markdown to LaTeX Conversion (New!)
-- `markdown_to_latex` - Convert Markdown files to editable LaTeX format
-
-See the birthday whitepaper example in `examples/` for a demonstration of advanced LaTeX capabilities including mathematical proofs, TikZ diagrams, and academic formatting.
-
-### Available Tools
-
-#### `list_printers`
-Lists all available CUPS printers.
-
-```json
-{
-  "name": "list_printers"
-}
+# Edit with conflict detection
+document(action="edit", path="paper.tex", old_string="draft", new_string="final")
 ```
+
+#### 2. `output` - Print or export documents
+```python
+# Print existing file (preferred)
+output(action="print", source="report.pdf")
+
+# Export to PDF
+output(action="export", source="notes.md", output_path="notes.pdf")
+```
+
+#### 3. `project` - Organize your work
+```python
+# Create project with AI-guided structure
+project(action="create", name="thesis", description="PhD thesis on quantum computing")
+
+# Switch projects
+project(action="switch", name="thesis")
+```
+
+#### 4. `printer` - Manage printing hardware
+```python
+printer(action="list")  # Show all printers
+printer(action="set_default", name="Office_Laser")
+```
+
+#### 5. `discover` - Find resources
+```python
+discover(action="documents", folder="drafts")  # Find documents
+discover(action="fonts", style="serif")  # Browse fonts
+```
+
+#### 6. `archive` - Manage versions
+```python
+archive(action="versions", filename="paper.tex")  # Find all versions
+archive(action="cleanup", pattern="*_old*")  # Clean old files
+```
+
+#### 7. `workflow` - Get intelligent guidance
+```python
+workflow(action="suggest", task="write paper with citations")
+workflow(action="next_steps")  # What to do next
+```
+
+Each tool provides hints for next steps, guiding you through complex workflows.
+
+### Complete Tool Reference
+
+For detailed documentation of all 7 tools, see [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md).
+
+### Legacy Tool Documentation
+
+For users still using individual tools, the original tool documentation follows below. Note that the unified semantic tools above are the recommended approach.
 
 #### `print_text`
 Prints plain text content.
@@ -711,26 +741,34 @@ This opens up entirely new possibilities for AI collaboration on complex documen
 
 ## Examples
 
-### LaTeX Capabilities Showcase
+### Common Workflows
 
-The `examples/` directory contains a demonstration of the server's advanced LaTeX capabilities:
+#### Academic Paper with Citations
+```python
+# Create project structure
+project(action="create", name="ml-paper", description="Machine learning research paper")
 
-- **`birthday_whitepaper.tex`** - A humorous academic paper showcasing:
-  - Complex mathematical equations and proofs
-  - TikZ diagrams with electrical circuits
-  - Multi-column layouts
-  - Custom theorem environments
-  - Bibliography and citations
-  - Professional academic formatting
+# Create bibliography
+document(action="create", content="@article{smith2023,...}", path="refs.bib")
 
-- **`birthday_whitepaper_unified_theory.pdf`** - The compiled PDF showing the final output
+# Create main document
+document(action="create", content="\\documentclass{article}...", path="paper.tex")
 
-These examples demonstrate the server's ability to handle sophisticated LaTeX documents with:
-- Mathematical typesetting
-- Technical diagrams
-- Academic paper formatting
-- Cross-references and citations
-- Custom LaTeX packages
+# Export to PDF
+output(action="export", source="paper.tex", output_path="paper.pdf")
+```
+
+#### Convert and Edit Workflow
+```python
+# Convert existing Markdown notes to LaTeX
+document(action="convert", source="notes.md", target_format="latex")
+
+# Edit the converted file
+document(action="edit", path="notes.tex", old_string="TODO", new_string="Introduction")
+
+# Generate PDF
+output(action="export", source="notes.tex")
+```
 
 ### Workflow Features
 
@@ -753,10 +791,11 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 
 ## Documentation
 
-- 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 30+ tools
-- 🎯 [Tool Grouping](docs/TOOL_GROUPING.md) - Semantic organization of tools
+- 📖 [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md) - Complete guide to the 7 semantic tools
+- 🎯 [Tool Grouping](docs/TOOL_GROUPING.md) - Semantic organization and design rationale
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
+- 📚 [Legacy Tool Reference](docs/TOOL_REFERENCE.md) - Documentation for individual tools (deprecated)
 
 ## Future Enhancements
 
