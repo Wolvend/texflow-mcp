@@ -1,6 +1,6 @@
-# Enhanced Tool Grouping for TeXFlow
+# Tool Grouping for TeXFlow
 
-This document describes the enhanced semantic grouping of TeXFlow's 30+ MCP tools into 7 coherent operations, with considerations for future expansion.
+This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 coherent operations, with considerations for future expansion.
 
 ## Current Semantic Operations (7 Groups)
 
@@ -79,7 +79,7 @@ This document describes the enhanced semantic grouping of TeXFlow's 30+ MCP tool
 - list_available_fonts → fonts
 - (new) system capability checks → capabilities
 
-### 6. Archive Operation 📦 (NEW)
+### 6. Archive Operation 📦
 **Purpose:** Manage document versions and history
 **Actions:**
 - `archive` - Soft delete documents
@@ -177,7 +177,7 @@ This document describes the enhanced semantic grouping of TeXFlow's 30+ MCP tool
 | project | ✅ Implemented | Full functionality |
 | printer | 🔄 Planned | Needs semantic wrapper |
 | discover | 🔄 Planned | Needs semantic wrapper |
-| archive | ✅ Implemented | New in this branch |
+| archive | ✅ Implemented | Full functionality |
 | workflow | 🔄 Planned | Needs semantic wrapper |
 
 ## Migration Path

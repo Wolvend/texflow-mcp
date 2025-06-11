@@ -43,7 +43,7 @@ use_project("thesis-2024")
 list_projects()  # See all your document projects
 ```
 
-## 🎯 Semantic Tool Organization (NEW!)
+## 🎯 Semantic Tool Organization
 
 TeXFlow's 30+ tools are organized into 7 semantic operations for easier discovery and use:
 
@@ -55,11 +55,11 @@ TeXFlow's 30+ tools are organized into 7 semantic operations for easier discover
 - **📦 Archive** - Manage versions and document history
 - **💡 Workflow** - Get guidance and automation
 
-See [Enhanced Tool Grouping](docs/ENHANCED_TOOL_GROUPING.md) for details.
+See [Tool Grouping](docs/TOOL_GROUPING.md) for details.
 
 ## Features
 
-### 📁 Project-Based Document Management (NEW!)
+### 📁 Project-Based Document Management
 - Create organized document projects with templates (article, thesis, letter)
 - Automatic project structure with content/, output/, and assets/ directories  
 - Switch between projects seamlessly
@@ -732,13 +732,13 @@ These examples demonstrate the server's ability to handle sophisticated LaTeX do
 - Cross-references and citations
 - Custom LaTeX packages
 
-### Enhanced Workflow Features
+### Workflow Features
 
-Recent improvements prevent common AI workflow issues:
+The system prevents common AI workflow issues:
 
-1. **Smart Content Detection**: The server now detects when LaTeX content has already been saved and warns against regenerating it
-2. **Clear Tool Guidance**: Tool descriptions explicitly guide the preferred workflow (save → use file path)
-3. **Better Error Handling**: Enhanced LaTeX error parser provides specific package installation instructions
+1. **Smart Content Detection**: The server detects when LaTeX content has already been saved and warns against regenerating it
+2. **Clear Tool Guidance**: Tool descriptions guide the preferred workflow (save → use file path)
+3. **Better Error Handling**: LaTeX error parser provides specific package installation instructions
 
 Example of the improved workflow:
 ```python
@@ -754,7 +754,7 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 ## Documentation
 
 - 📖 [Tool Reference](docs/TOOL_REFERENCE.md) - Complete guide to all 30+ tools
-- 🎯 [Enhanced Tool Grouping](docs/ENHANCED_TOOL_GROUPING.md) - Semantic organization of tools
+- 🎯 [Tool Grouping](docs/TOOL_GROUPING.md) - Semantic organization of tools
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
 
