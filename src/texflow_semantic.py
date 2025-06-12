@@ -15,6 +15,7 @@ from .features.document import DocumentOperation
 from .features.output import OutputOperation
 from .features.project import ProjectOperation
 from .features.organizer import OrganizerOperation
+from .features.archive import ArchiveOperation
 
 
 class TeXFlowSemantic:
@@ -70,6 +71,11 @@ class TeXFlowSemantic:
         organizer_op = OrganizerOperation()
         self.registry.register("organizer", organizer_op)
         self.router.register_operation("organizer", organizer_op)
+        
+        # Archive operation
+        archive_op = ArchiveOperation(self.texflow)
+        self.registry.register("archive", archive_op)
+        self.router.register_operation("archive", archive_op)
         
         # TODO: Register remaining operations when implemented
         # - printer

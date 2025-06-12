@@ -19,5 +19,5 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.features", "src.features.document", "src.features.organizer", "src.features.output", "src.features.project"]
+packages = ["src", "src.core", "src.features", "src.features.document", "src.features.organizer", "src.features.output", "src.features.project", "src.features.archive"]
 py-modules = ["texflow"]

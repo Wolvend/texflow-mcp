@@ -99,6 +99,25 @@ The `discover` operation helps users find documents, fonts, and system capabilit
 - Richer filtering options
 - System capability reporting
 
+## Archive Operation
+
+The `archive` operation manages document versions and history.
+
+### Mapping
+
+| Old Tool | New Operation | Action | Example |
+|----------|---------------|---------|---------|
+| `archive_document` | `archive` | `archive` | `archive(action="archive", path="old_draft.md", reason="outdated")` |
+| `list_archived_documents` | `archive` | `list` | `archive(action="list", directory=".")` |
+| `restore_archived_document` | `archive` | `restore` | `archive(action="restore", archive_path="...")` |
+| `find_document_versions` | `archive` | `versions` | `archive(action="versions", filename="report.tex")` |
+| `clean_workspace` | `archive` | `cleanup` | `archive(action="cleanup", pattern="*_old*")` |
+
+### Key Improvements
+- Unified version management interface
+- Better organization of history-related tools
+- Clear separation from document editing operations
+
 ## Workflow Operation
 
 The `workflow` operation provides guidance and suggestions.
