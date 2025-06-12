@@ -7,7 +7,7 @@ This example demonstrates creating a family recipe book using TeXFlow's complete
 As an AI agent using TeXFlow, I navigate the document creation process through semantic tool operations. Here's how I work:
 
 ### 1. Following Semantic Operations
-Instead of memorizing 30+ individual tools, I use 7 semantic operations (document, output, project, etc.) with action parameters. The consistent pattern `tool(action='...', parameters)` makes navigation intuitive.
+Instead of needing to memorize a large toolset, I use 7 semantic operations (document, output, project, etc.) with action parameters. The consistent pattern `tool(action='...', parameters)` makes navigation intuitive.
 
 ### 2. Using Tool Hints
 Each tool response includes `💡 Next:` suggestions that guide my next actions:
