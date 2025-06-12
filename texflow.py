@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 import json
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -83,7 +84,15 @@ def document(
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content)
-            return f"✓ Document created: {file_path}\n💡 Next steps:\n→ Edit: document(action='edit', path='{file_path}')\n→ Export: output(action='export', source='{file_path}')"
+            
+            next_steps = ["💡 Next steps:"]
+            next_steps.append(f"→ Read: document(action='read', path='{file_path}')")
+            next_steps.append(f"→ Edit: document(action='edit', path='{file_path}')")
+            if file_path.suffix == ".tex":
+                next_steps.append(f"→ Validate: document(action='validate', path='{file_path}')")
+            next_steps.append(f"→ Export: output(action='export', source='{file_path}')")
+            
+            return f"✓ Document created: {file_path}\n" + "\n".join(next_steps)
         except Exception as e:
             return f"❌ Error creating document: {e}"
             
@@ -120,7 +129,18 @@ def document(
                 
             new_content = content.replace(old_string, new_string, 1)
             file_path.write_text(new_content)
-            return f"✓ Document edited: {file_path}\n💡 Next: output(action='export', source='{file_path}')"
+            
+            # Provide multiple next step options based on file type
+            next_steps = ["💡 Next steps:"]
+            next_steps.append(f"→ Edit more: document(action='edit', path='{file_path}')")
+            next_steps.append(f"→ Review changes: document(action='read', path='{file_path}')")
+            
+            if file_path.suffix == ".tex":
+                next_steps.append(f"→ Validate: document(action='validate', path='{file_path}')")
+            
+            next_steps.append(f"→ Export: output(action='export', source='{file_path}')")
+            
+            return f"✓ Document edited: {file_path}\n" + "\n".join(next_steps)
         except Exception as e:
             return f"❌ Error editing document: {e}"
             
@@ -143,6 +163,78 @@ def document(
         else:
             return f"❌ Error: Conversion from {source_path.suffix} to {target_format} not supported"
             
+    elif action == "validate":
+        if not path:
+            return "❌ Error: Path required for validate action"
+            
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"❌ Error: File not found: {file_path}"
+            
+        if file_path.suffix == ".tex":
+            # Validate LaTeX file
+            errors = []
+            warnings = []
+            
+            # Try chktex if available
+            try:
+                result = subprocess.run(["chktex", str(file_path)], capture_output=True, text=True)
+                if "Error" in result.stderr:
+                    errors.append(result.stderr)
+                if "Warning" in result.stdout:
+                    # Extract warning count
+                    import re
+                    match = re.search(r'(\d+) warnings? printed', result.stdout)
+                    if match:
+                        warnings.append(f"{match.group(1)} warnings found (run chktex for details)")
+            except FileNotFoundError:
+                pass  # chktex not available
+                
+            # Try test compilation
+            try:
+                result = subprocess.run(
+                    ["xelatex", "-interaction=nonstopmode", "-halt-on-error", str(file_path)],
+                    cwd=file_path.parent,
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    # Extract error from output
+                    error_lines = []
+                    for line in result.stdout.split('\n'):
+                        if line.startswith('!'):
+                            error_lines.append(line)
+                    if error_lines:
+                        errors.extend(error_lines[:3])  # First 3 errors
+                    else:
+                        errors.append("Compilation failed (check log file)")
+            except FileNotFoundError:
+                errors.append("XeLaTeX not found - cannot validate compilation")
+                
+            if errors:
+                return f"❌ Validation failed:\n" + "\n".join(errors) + "\n💡 Next: document(action='edit', path='{file_path}') to fix errors"
+            elif warnings:
+                return f"✓ Validation passed with warnings:\n" + "\n".join(warnings) + "\n💡 Next steps:\n→ Edit: document(action='edit', path='{file_path}') to fix warnings\n→ Export: output(action='export', source='{file_path}') to generate PDF"
+            else:
+                return f"✓ Validation passed!\n💡 Next: output(action='export', source='{file_path}') to generate PDF"
+        else:
+            return f"✓ No validation available for {file_path.suffix} files\n💡 Next: output(action='export', source='{file_path}')"
+            
+    elif action == "status":
+        if not path:
+            return "❌ Error: Path required for status action"
+            
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            return f"❌ Error: File not found: {file_path}"
+            
+        # Get file info
+        stat = file_path.stat()
+        modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        size = stat.st_size
+        
+        return f"📄 File: {file_path}\n🕒 Modified: {modified}\n📏 Size: {size} bytes\n💡 Next steps:\n→ Read: document(action='read', path='{file_path}')\n→ Edit: document(action='edit', path='{file_path}')"
+        
     else:
         return f"❌ Error: Unknown document action '{action}'. Available: create, read, edit, convert, validate, status"
 
@@ -224,9 +316,19 @@ def output(
             # LaTeX to PDF via xelatex
             try:
                 # Run in the directory containing the file
-                subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
-                             cwd=source_path.parent, check=True)
-                return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
+                result = subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
+                                      cwd=source_path.parent, check=True)
+                
+                # The PDF is created in the same directory as the .tex file
+                actual_pdf_path = source_path.with_suffix(".pdf")
+                
+                # Move to desired location if different
+                if output_path and pdf_path != actual_pdf_path:
+                    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(actual_pdf_path), str(pdf_path))
+                    return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
+                else:
+                    return f"✓ PDF created: {actual_pdf_path}\n💡 Next: output(action='print', source='{actual_pdf_path}')"
             except subprocess.CalledProcessError as e:
                 return f"❌ Error creating PDF: {e}"
         else:
