@@ -685,6 +685,57 @@ def discover(
             result += f"  - {f.name}\n"
         return result
         
+    elif action == "fonts":
+        # List available system fonts using fc-list
+        try:
+            # Get all fonts with family names
+            result = subprocess.run(["fc-list", ":", "family"], 
+                                  capture_output=True, text=True, check=True)
+            
+            # Parse and deduplicate font families
+            font_families = set()
+            for line in result.stdout.strip().split('\n'):
+                if line:
+                    # fc-list returns fonts with variants, extract base family
+                    family = line.split(',')[0].strip()
+                    if family:
+                        font_families.add(family)
+            
+            # Sort fonts alphabetically
+            sorted_fonts = sorted(font_families)
+            
+            # Filter by style if requested
+            if style:
+                style_lower = style.lower()
+                if style_lower == "serif":
+                    sorted_fonts = [f for f in sorted_fonts if any(s in f.lower() for s in ["serif", "times", "georgia", "book"])]
+                elif style_lower == "sans":
+                    sorted_fonts = [f for f in sorted_fonts if any(s in f.lower() for s in ["sans", "arial", "helvetica", "calibri"])]
+                elif style_lower == "mono":
+                    sorted_fonts = [f for f in sorted_fonts if any(s in f.lower() for s in ["mono", "courier", "consolas", "code"])]
+                elif style_lower == "display":
+                    sorted_fonts = [f for f in sorted_fonts if any(s in f.lower() for s in ["display", "headline", "title"])]
+            
+            if not sorted_fonts:
+                return f"No fonts found{f' matching style {style}' if style else ''}"
+                
+            result = f"📝 Available{f' {style}' if style else ''} fonts ({len(sorted_fonts)} found):\n"
+            for font in sorted_fonts[:50]:  # Limit to first 50 to avoid overwhelming output
+                result += f"  - {font}\n"
+                
+            if len(sorted_fonts) > 50:
+                result += f"\n... and {len(sorted_fonts) - 50} more fonts"
+                
+            result += "\n💡 Use in LaTeX with: \\setmainfont{FontName}"
+            result += "\n💡 Filter by style: discover(action='fonts', style='serif|sans|mono|display')"
+            
+            return result
+            
+        except subprocess.CalledProcessError:
+            return "❌ Error: fc-list command not found. Install fontconfig package."
+        except Exception as e:
+            return f"❌ Error listing fonts: {e}"
+            
     elif action == "capabilities":
         caps = ["✓ CUPS printing system"]
         
@@ -702,10 +753,17 @@ def discover(
         except:
             caps.append("✗ XeLaTeX not found")
             
+        # Check for fontconfig (fc-list)
+        try:
+            subprocess.run(["fc-list", "--version"], capture_output=True, check=True)
+            caps.append("✓ Fontconfig (Font discovery)")
+        except:
+            caps.append("✗ Fontconfig not found")
+            
         return "System Capabilities:\n" + "\n".join(caps)
         
     else:
-        return f"❌ Error: Unknown discover action '{action}'. Available: documents, capabilities"
+        return f"❌ Error: Unknown discover action '{action}'. Available: documents, fonts, capabilities"
 
 
 @mcp.tool()
