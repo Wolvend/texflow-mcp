@@ -151,13 +151,19 @@ Finds documents, fonts, and system capabilities.
 
 **Examples:**
 ```python
+discover(action="fonts")
+# → Lists all available font families (e.g., Barlow, DejaVu Serif)
+# → Shows: "📝 Available fonts (296 found)..."
+
 discover(action="fonts", style="serif")
-# → Lists serif fonts for LaTeX
-# → Suggests: create document with custom font
+# → Filters to serif fonts only
+# → Also supports: sans, mono, display
 
 discover(action="capabilities")
-# → Shows what's installed (pandoc, XeLaTeX, etc.)
+# → Shows what's installed (pandoc, XeLaTeX, fontconfig, etc.)
 ```
+
+**Font Usage Note**: After discovering fonts, use them in LaTeX with `\setmainfont{FontName}`. If a desired font isn't available, install it at the system level first.
 
 ### 6. `archive` - Version Management
 
