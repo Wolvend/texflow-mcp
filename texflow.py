@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TeXFlow Unified MCP Server - Simple Implementation
 
-This server exposes only 7 semantic MCP tools without backward compatibility.
+This server exposes 8 semantic MCP tools without backward compatibility.
 Each tool provides intelligent guidance for document workflows.
 """
 
@@ -17,10 +17,18 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from mcp.server.fastmcp import FastMCP
-
-# Create MCP server instance
-mcp = FastMCP("texflow")
+try:
+    from mcp.server.fastmcp import FastMCP
+    # Create MCP server instance
+    mcp = FastMCP("texflow")
+except ImportError:
+    # Running in test mode without MCP
+    class MockMCP:
+        def tool(self):
+            def decorator(func):
+                return func
+            return decorator
+    mcp = MockMCP()
 
 # Global state for session context
 SESSION_CONTEXT = {
@@ -29,6 +37,124 @@ SESSION_CONTEXT = {
     "last_used_format": None,
     "workspace_root": Path.cwd()  # Store the initial working directory
 }
+
+# Template directory configuration
+TEXFLOW_ROOT = Path.home() / "Documents" / "TeXFlow"
+TEMPLATES_DIR = TEXFLOW_ROOT / "templates"  # Lowercase for convention
+
+
+def initialize_default_template():
+    """Initialize the default template if it doesn't exist."""
+    default_template_path = TEMPLATES_DIR / "default" / "minimal"
+    
+    # Only create if it doesn't exist
+    if not default_template_path.exists():
+        default_template_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create main.tex
+        main_tex = default_template_path / "main.tex"
+        main_tex.write_text(r"""\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% Document settings
+\geometry{margin=1in}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+}
+
+% Document metadata
+\title{Document Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This is the abstract of your document. Provide a brief summary of your work here.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+Start writing your document here. This template includes commonly used packages and a standard structure.
+
+\section{Main Content}
+Your main content goes here.
+
+\subsection{Subsection Example}
+You can organize your content with subsections.
+
+\section{Conclusion}
+Summarize your work here.
+
+% Bibliography example (uncomment to use)
+% \bibliographystyle{plain}
+% \bibliography{references}
+
+\end{document}""")
+        
+        # Create a sample bibliography file
+        references_bib = default_template_path / "references.bib"
+        references_bib.write_text(r"""@article{example2024,
+    author = {Author, First and Second, Author},
+    title = {An Example Article},
+    journal = {Journal Name},
+    year = {2024},
+    volume = {1},
+    number = {1},
+    pages = {1--10}
+}
+
+@book{examplebook2024,
+    author = {Book Author},
+    title = {An Example Book},
+    publisher = {Publisher Name},
+    year = {2024},
+    edition = {1st}
+}""")
+        
+        # Create a README for the template
+        readme = default_template_path / "README.md"
+        readme.write_text("""# Default Minimal Template
+
+This is the default TeXFlow template that demonstrates the basic structure for LaTeX documents.
+
+## Files Included
+
+- `main.tex` - The main LaTeX document with common packages and structure
+- `references.bib` - Sample bibliography file
+- `README.md` - This file
+
+## Usage
+
+This template includes:
+- Common LaTeX packages (geometry, hyperref, graphicx, amsmath)
+- Standard document structure (title, abstract, table of contents, sections)
+- Bibliography setup (commented out by default)
+- Proper UTF-8 encoding and font setup
+
+## Customization
+
+Feel free to modify this template to suit your needs. It will not be overwritten by TeXFlow.
+""")
+
+
+# Initialize default template on import
+initialize_default_template()
 
 
 def resolve_path(path_str: Optional[str] = None, default_name: str = "document", 
@@ -661,43 +787,341 @@ def workflow(
         if not task:
             return "❌ Error: Task description required"
             
-        task_lower = task.lower()
+        # Get available templates
+        available_templates = []
+        if TEMPLATES_DIR.exists():
+            for cat_dir in TEMPLATES_DIR.iterdir():
+                if cat_dir.is_dir() and not cat_dir.name.startswith('.'):
+                    for template in cat_dir.iterdir():
+                        if template.is_dir():
+                            available_templates.append(f"{cat_dir.name}/{template.name}")
         
-        if any(word in task_lower for word in ["paper", "research", "academic", "thesis"]):
-            return """📚 Academic Paper Workflow:
-1. project(action="create", name="my-paper", description="Research paper on...")
-2. document(action="create", content="@article{...}", path="content/refs.bib")
-3. document(action="create", content="\\documentclass{article}...", path="content/paper.tex")
-4. output(action="export", source="content/paper.tex")
-5. output(action="print", source="output/pdf/paper.pdf")"""
-            
-        elif any(word in task_lower for word in ["report", "documentation"]):
-            return """📄 Report Workflow:
-1. document(action="create", content="# Report Title", intent="report")
-2. document(action="edit", path="report.md", old_string="...", new_string="...")
-3. output(action="export", source="report.md", output_path="report.pdf")"""
-            
+        # Build workflow suggestion
+        workflow = f"💡 Workflow for '{task}':\n\n"
+        
+        # Step 1: Create project
+        workflow += f"1. Create project:\n   project(action='create', name='my-{task.lower().replace(' ', '-')}', description='{task}')\n\n"
+        
+        # Step 2: Suggest template if available
+        if available_templates:
+            workflow += "2. Start from template:\n"
+            workflow += "   templates(action='list')  # See available templates\n"
+            if "default/minimal" in available_templates:
+                workflow += "   templates(action='use', category='default', name='minimal')  # Use default template\n"
+            workflow += "\n"
+            next_step = 3
         else:
-            return f"""💡 General Workflow for '{task}':
-1. document(action="create", content="...", intent="{task}")
-2. Edit as needed
-3. output(action="export", source="...")"""
+            workflow += "2. Create your first document:\n"
+            workflow += "   document(action='create', content='# Title', path='content/document.md')\n\n"
+            next_step = 3
+            
+        # Remaining steps
+        workflow += f"{next_step}. Edit and develop:\n"
+        workflow += "   document(action='edit', path='...')  # Make changes\n"
+        workflow += "   document(action='validate', path='...')  # Check LaTeX syntax\n\n"
+        
+        workflow += f"{next_step + 1}. Generate output:\n"
+        workflow += "   output(action='export', source='...', output_path='output/document.pdf')\n"
+        workflow += "   output(action='export', source='...', output_path='output/document.docx')  # For collaboration\n\n"
+        
+        workflow += f"{next_step + 2}. Print if needed:\n"
+        workflow += "   output(action='print', source='output/document.pdf')"
+        
+        return workflow
             
     elif action == "next_steps":
         current_project = SESSION_CONTEXT.get("current_project")
         if current_project:
             return f"""💡 Next steps in project '{current_project}':
-→ Create document: document(action="create", content="...", path="content/...")
-→ List documents: discover(action="documents")
-→ Export to PDF: output(action="export", source="...")"""
+→ Use template: templates(action='use', category='default', name='minimal')
+→ Create document: document(action='create', content='...', path='content/...')
+→ List documents: discover(action='documents')
+→ Export to PDF: output(action='export', source='...')"""
         else:
             return """💡 Getting started:
-→ Create project: project(action="create", name="...", description="...")
-→ List printers: printer(action="list")
-→ Check system: discover(action="capabilities")"""
+→ Create project: project(action='create', name='...', description='...')
+→ Browse templates: templates(action='list')
+→ Check system: discover(action='capabilities')
+→ List printers: printer(action='list')"""
             
     else:
         return f"❌ Error: Unknown workflow action '{action}'. Available: suggest, next_steps"
+
+
+@mcp.tool()
+def templates(
+    action: str,
+    category: Optional[str] = None,
+    name: Optional[str] = None,
+    source: Optional[str] = None,
+    target: Optional[str] = None,
+    content: Optional[str] = None
+) -> str:
+    """Manage LaTeX document templates for quick project starts.
+    
+    Templates are organized by category (research, book, letter, etc.) and stored
+    in ~/Documents/TeXFlow/templates/. Each template can include .tex files, 
+    bibliographies, style files, and assets.
+    
+    Actions:
+    - list: Show available templates (optionally filtered by category)
+    - use: Copy a template to current project or specified location
+    - create: Create a new template from content or existing document
+    - copy: Duplicate an existing template with a new name
+    - edit: Modify an existing template
+    - rename: Rename a template
+    - delete: Remove a template
+    - info: Get details about a specific template
+    """
+    # Ensure templates directory exists
+    TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    if action == "list":
+        templates_found = []
+        
+        if category:
+            # List templates in specific category
+            cat_path = TEMPLATES_DIR / category
+            if cat_path.exists():
+                for template in cat_path.iterdir():
+                    if template.is_dir():
+                        templates_found.append(f"{category}/{template.name}")
+            else:
+                return f"❌ Error: Category '{category}' not found"
+        else:
+            # List all templates by category
+            for cat_dir in TEMPLATES_DIR.iterdir():
+                if cat_dir.is_dir() and not cat_dir.name.startswith('.'):
+                    for template in cat_dir.iterdir():
+                        if template.is_dir():
+                            templates_found.append(f"{cat_dir.name}/{template.name}")
+        
+        if not templates_found:
+            return """📄 No templates found.
+💡 Get started:
+→ Clone template repository: git clone https://github.com/[user]/texflow-templates ~/Documents/TeXFlow/templates
+→ Create your own: templates(action='create', category='research', name='my-style', source='path/to/document.tex')"""
+        
+        result = "📄 Available templates:\n"
+        for template in sorted(templates_found):
+            result += f"  - {template}\n"
+        result += "\n💡 Next: templates(action='use', category='...', name='...')"
+        return result
+        
+    elif action == "use":
+        if not category or not name:
+            return "❌ Error: Both category and name required for use action"
+            
+        template_path = TEMPLATES_DIR / category / name
+        if not template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        # Determine target location
+        if target:
+            dest_path = resolve_path(target, use_project=False)
+        elif SESSION_CONTEXT["current_project"]:
+            # Copy to current project's content directory
+            project_root = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
+            dest_path = project_root / "content" / f"{name}-from-template"
+        else:
+            # Copy to current directory
+            dest_path = Path.cwd() / f"{name}-from-template"
+            
+        # Copy template
+        try:
+            if dest_path.exists():
+                return f"❌ Error: Destination already exists: {dest_path}"
+            shutil.copytree(template_path, dest_path)
+            
+            # Find main .tex file in copied template
+            tex_files = list(dest_path.glob("*.tex"))
+            main_tex = tex_files[0] if tex_files else None
+            
+            return f"""✓ Template copied to: {dest_path}
+💡 Next steps:
+→ Edit: document(action='edit', path='{main_tex if main_tex else dest_path}')
+→ Customize and start working on your document"""
+        except Exception as e:
+            return f"❌ Error copying template: {e}"
+            
+    elif action == "create":
+        if not category or not name:
+            return "❌ Error: Both category and name required for create action"
+            
+        template_path = TEMPLATES_DIR / category / name
+        if template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' already exists"
+            
+        try:
+            # Create template directory
+            template_path.mkdir(parents=True, exist_ok=True)
+            
+            if source:
+                # Copy from existing document/project
+                source_path = resolve_path(source)
+                if source_path.is_file():
+                    # Single file - copy it
+                    shutil.copy2(source_path, template_path / source_path.name)
+                elif source_path.is_dir():
+                    # Directory - copy contents
+                    for item in source_path.iterdir():
+                        if item.name not in ['.git', '__pycache__', '.DS_Store']:
+                            if item.is_file():
+                                shutil.copy2(item, template_path / item.name)
+                            else:
+                                shutil.copytree(item, template_path / item.name)
+                else:
+                    return f"❌ Error: Source not found: {source_path}"
+            elif content:
+                # Create from provided content
+                main_tex = template_path / "main.tex"
+                main_tex.write_text(content)
+            else:
+                # Create minimal template
+                main_tex = template_path / "main.tex"
+                main_tex.write_text(r"""\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+\title{Title}
+\author{Author}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Start your document here.
+
+\end{document}""")
+            
+            return f"""✓ Template created: {category}/{name}
+💡 Next steps:
+→ Edit template: templates(action='edit', category='{category}', name='{name}')
+→ Use template: templates(action='use', category='{category}', name='{name}')"""
+        except Exception as e:
+            return f"❌ Error creating template: {e}"
+            
+    elif action == "copy":
+        if not category or not name or not target:
+            return "❌ Error: Category, name, and target required for copy action"
+            
+        source_path = TEMPLATES_DIR / category / name
+        if not source_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        # Parse target as category/name or just name (same category)
+        if '/' in target:
+            target_cat, target_name = target.split('/', 1)
+        else:
+            target_cat, target_name = category, target
+            
+        target_path = TEMPLATES_DIR / target_cat / target_name
+        
+        try:
+            if target_path.exists():
+                return f"❌ Error: Target template already exists: {target_cat}/{target_name}"
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_path, target_path)
+            return f"""✓ Template copied: {category}/{name} → {target_cat}/{target_name}
+💡 Next: templates(action='edit', category='{target_cat}', name='{target_name}')"""
+        except Exception as e:
+            return f"❌ Error copying template: {e}"
+            
+    elif action == "edit":
+        if not category or not name:
+            return "❌ Error: Both category and name required for edit action"
+            
+        template_path = TEMPLATES_DIR / category / name
+        if not template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        # Find main .tex file
+        tex_files = list(template_path.glob("*.tex"))
+        if not tex_files:
+            return f"❌ Error: No .tex files found in template '{category}/{name}'"
+            
+        main_tex = tex_files[0]  # Use first .tex file found
+        
+        return f"""📄 Template location: {template_path}
+Main file: {main_tex}
+💡 Edit with: document(action='edit', path='{main_tex}')"""
+        
+    elif action == "rename":
+        if not category or not name or not target:
+            return "❌ Error: Category, name, and target required for rename action"
+            
+        source_path = TEMPLATES_DIR / category / name
+        if not source_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        # Parse target
+        if '/' in target:
+            target_cat, target_name = target.split('/', 1)
+        else:
+            target_cat, target_name = category, target
+            
+        target_path = TEMPLATES_DIR / target_cat / target_name
+        
+        try:
+            if target_path.exists():
+                return f"❌ Error: Target already exists: {target_cat}/{target_name}"
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.rename(target_path)
+            return f"✓ Template renamed: {category}/{name} → {target_cat}/{target_name}"
+        except Exception as e:
+            return f"❌ Error renaming template: {e}"
+            
+    elif action == "delete":
+        if not category or not name:
+            return "❌ Error: Both category and name required for delete action"
+            
+        template_path = TEMPLATES_DIR / category / name
+        if not template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        try:
+            shutil.rmtree(template_path)
+            # Clean up empty category directory
+            if not list((TEMPLATES_DIR / category).iterdir()):
+                (TEMPLATES_DIR / category).rmdir()
+            return f"✓ Template deleted: {category}/{name}"
+        except Exception as e:
+            return f"❌ Error deleting template: {e}"
+            
+    elif action == "info":
+        if not category or not name:
+            return "❌ Error: Both category and name required for info action"
+            
+        template_path = TEMPLATES_DIR / category / name
+        if not template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' not found"
+            
+        # Gather template information
+        files = list(template_path.rglob("*"))
+        tex_files = [f for f in files if f.suffix == ".tex" and f.is_file()]
+        style_files = [f for f in files if f.suffix in [".sty", ".cls"] and f.is_file()]
+        bib_files = [f for f in files if f.suffix in [".bib", ".bst"] and f.is_file()]
+        
+        info = f"""📄 Template: {category}/{name}
+📂 Location: {template_path}
+
+Files:
+  - TeX files: {len(tex_files)}
+  - Style files: {len(style_files)}
+  - Bibliography: {len(bib_files)}
+  - Total files: {len([f for f in files if f.is_file()])}
+  
+💡 Next steps:
+→ Use: templates(action='use', category='{category}', name='{name}')
+→ Edit: templates(action='edit', category='{category}', name='{name}')
+→ Copy: templates(action='copy', category='{category}', name='{name}', target='new-name')"""
+        
+        return info
+        
+    else:
+        return f"❌ Error: Unknown templates action '{action}'. Available: list, use, create, copy, edit, rename, delete, info"
 
 
 def main():
