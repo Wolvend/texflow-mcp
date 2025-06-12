@@ -7,7 +7,7 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
 ### 1. Document Operation 📄
 **Purpose:** Manage the entire document lifecycle
 **Actions:**
-- `create` - Create new documents with auto-format detection
+- `create` - Create documents with auto-format detection
 - `read` - Read documents with line numbers
 - `edit` - Edit with change tracking and conflict prevention
 - `convert` - Transform between formats (Markdown ↔ LaTeX)
@@ -38,7 +38,7 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
 **Actions:**
 - `create` - Create project with AI-guided structure
 - `switch` - Change active project
-- `list` - Show all projects
+- `list` - Show projects
 - `info` - Get current project details
 - `close` - Close current project
 
@@ -77,7 +77,7 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
 **Tools Mapped:**
 - list_documents → documents
 - list_available_fonts → fonts
-- (new) system capability checks → capabilities
+- system capability checks → capabilities
 
 ### 6. Archive Operation 📦
 **Purpose:** Manage document versions and history
@@ -85,7 +85,7 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
 - `archive` - Soft delete documents
 - `restore` - Recover archived documents
 - `list` - Show archived documents
-- `versions` - Find all versions of a document
+- `versions` - Find versions of a document
 - `cleanup` - Bulk archive by pattern
 
 **Tools Mapped:**
@@ -104,8 +104,8 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
 
 **Tools Mapped:**
 - suggest_document_workflow → suggest
-- (new) contextual guidance → guide
-- (new) next step suggestions → next_steps
+- contextual guidance → guide
+- next step suggestions → next_steps
 
 ## Benefits of This Grouping
 
@@ -126,7 +126,7 @@ This document describes the semantic grouping of TeXFlow's 30+ MCP tools into 7 
    - Consistent naming patterns
 
 5. **Extensibility**
-   - New features fit naturally into existing groups
+   - Features fit naturally into existing groups
    - Clear pattern for adding new operations
 
 ## Future Considerations
@@ -212,7 +212,7 @@ archive(action="cleanup", pattern="draft_v*.md")
 
 # Find and manage versions
 versions = archive(action="versions", filename="report.tex")
-# System shows all versions with metadata
+# System shows versions with metadata
 
 # Restore with guidance
 archive(action="restore", archive_path=versions["archived"][0]["path"])

@@ -93,7 +93,7 @@ The system automatically detects optimal format:
 
 ### 5. Personality System
 
-Currently one comprehensive role:
+Currently one main role:
 
 ```json
 {

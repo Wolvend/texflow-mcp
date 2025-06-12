@@ -37,14 +37,27 @@ Manages creating, reading, editing, converting, and validating documents.
 # Create with smart format detection
 document(action="create", content="# Quantum Theory\n\n$E = mc^2$", intent="research paper")
 # → Creates LaTeX document due to math content and intent
+# → Offers: read, edit, validate (for LaTeX), export
 
 # Convert existing file (don't recreate!)
 document(action="convert", source="notes.md", target_format="latex")
-# → Suggests: edit the converted file or generate PDF
+# → Creates notes.tex from notes.md
+# → Suggests: edit the converted file
+
+# Edit with multiple next steps
+document(action="edit", path="paper.tex", old_string="draft", new_string="final")
+# → Offers: edit more, review changes, validate, export
+
+# Validate before export
+document(action="validate", path="paper.tex")
+# → If errors: suggests editing to fix
+# → If warnings: suggests edit or export
+# → If clean: suggests export to PDF
 
 # Check before editing shared documents
 document(action="status", path="shared.tex")
-# → Shows if someone else edited it
+# → Shows modification time and size
+# → Offers: read or edit
 ```
 
 ### 2. `output` - Print and Export
@@ -65,7 +78,7 @@ Handles all forms of output from the system.
 
 **Examples:**
 ```python
-# Best practice: use existing files
+# Recommended: use existing files
 output(action="export", source="thesis.tex", output_path="thesis.pdf")
 # → Suggests: print the PDF or share it
 
@@ -98,7 +111,7 @@ project(action="create", name="quantum-paper", description="Research on quantum 
 
 # Switch context
 project(action="switch", name="thesis")
-# → All subsequent operations use thesis project paths
+# → Subsequent operations use thesis project paths
 ```
 
 ### 4. `printer` - Hardware Management
@@ -195,7 +208,7 @@ workflow(action="guide", task="citations")
 
 ## Best Practices
 
-1. **Use existing files** - Always prefer `source` over `content` parameters
+1. **Use existing files** - Prefer `source` over `content` parameters
 2. **Check status first** - Use `document(action="status")` before editing shared files
 3. **Let format auto-detect** - The system chooses optimal format based on content
 4. **Follow the hints** - Each operation suggests logical next steps

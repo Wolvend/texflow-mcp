@@ -2,7 +2,7 @@
 
 ![TeXFlow](docs/img/texflow-banner.png)
 
-A comprehensive document authoring and composition MCP server that provides a complete pipeline for document creation: **Content → Processing → Output**. TeXFlow transforms your ideas into beautifully typeset documents using LaTeX, Markdown, and modern document processing tools.
+A document authoring and composition MCP server that provides a pipeline for document creation: **Content → Processing → Output**. TeXFlow transforms your ideas into typeset documents using LaTeX, Markdown, and modern document processing tools.
 
 ## 🚀 Key Innovation: Collaborative Document Editing
 
@@ -15,7 +15,7 @@ This server introduces **collaborative editing capabilities** that prevent confl
 
 ## Core Value Proposition
 
-TeXFlow enables ANY MCP-compatible AI client (Claude Desktop, Dive AI, or custom implementations) to have full document workflow capabilities with **project-based organization**. Your AI assistant becomes a complete document authoring companion that can:
+TeXFlow enables MCP-compatible AI clients (Claude Desktop, Dive AI, or custom implementations) to have document workflow capabilities with **project-based organization**. Your AI assistant becomes a document authoring companion that can:
 
 - Create and manage document projects with organized structure
 - Author content in Markdown or LaTeX with proper project context
@@ -100,8 +100,8 @@ See [Tool Grouping](docs/TOOL_GROUPING.md) for details.
 - Archive (soft delete) documents to hidden .texflow_archive folder
 - List and browse archived documents
 - Restore archived documents to original or new location
-- Find all versions of a document (current and archived)
-- Bulk cleanup with pattern matching (e.g., archive all *_old* files)
+- Find versions of a document (current and archived)
+- Bulk cleanup with pattern matching (e.g., archive *_old* files)
 - Preserves document history with timestamps
 
 ### Smart Features
@@ -181,7 +181,7 @@ See [Tool Grouping](docs/TOOL_GROUPING.md) for details.
   - `texlive-pictures`: TikZ package for creating diagrams and graphics
   - `chktex`/`texlive-binextra`: LaTeX validation tools for checking syntax
 
-The server will check for these dependencies at startup and only enable features that have their requirements met. Missing dependencies will be reported with installation instructions.
+The server checks for these dependencies at startup and enables features that have their requirements met. Missing dependencies are reported with installation instructions.
 
 ## Installation
 
