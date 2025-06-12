@@ -1,6 +1,6 @@
 # TeXFlow Unified Tool Reference
 
-TeXFlow provides 7 semantic tools that understand your intent and guide you through document workflows.
+TeXFlow provides 8 semantic tools that understand your intent and guide you through document workflows.
 
 ## Core Concepts
 
@@ -204,6 +204,41 @@ workflow(action="suggest", task="write paper with citations")
 
 workflow(action="guide", task="citations")
 # → Shows citation workflow with examples
+```
+
+## 8. Templates Tool
+
+Start quickly with pre-built document templates or create your own for reuse.
+
+**Actions:**
+- `list` - Show available templates (optionally filtered by category)
+- `use` - Copy a template to current project or specified location
+- `create` - Create a new template from content or existing document
+- `copy` - Duplicate an existing template with a new name
+- `edit` - Get location to modify an existing template
+- `rename` - Rename a template
+- `delete` - Remove a template
+- `info` - Get details about a specific template
+
+**Examples:**
+```python
+# List all templates
+templates(action="list")
+# → Shows: default/minimal, letter/formal, etc.
+
+# Use a template in current project
+templates(action="use", category="default", name="minimal")
+# → Copies template to project with hints for next steps
+
+# Create from existing document
+templates(action="create", category="thesis", name="phd-format", 
+         source="my-thesis.tex")
+# → Saves document as reusable template
+
+# Quick letter template
+templates(action="use", category="letter", name="formal", 
+         target="complaint.tex")
+# → Ready-to-edit letter template
 ```
 
 ## Best Practices

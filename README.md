@@ -45,7 +45,7 @@ list_projects()  # See all your document projects
 
 ## 🎯 Semantic Tool Organization
 
-TeXFlow's 30+ tools are organized into 7 semantic operations for easier discovery and use:
+TeXFlow's tools are organized into 8 semantic operations for easier discovery and use:
 
 - **📄 Document** - Create, edit, convert, and validate documents
 - **🖨️ Output** - Print and export to various formats
@@ -54,6 +54,7 @@ TeXFlow's 30+ tools are organized into 7 semantic operations for easier discover
 - **🔍 Discover** - Find documents, fonts, and resources
 - **📦 Archive** - Manage versions and document history
 - **💡 Workflow** - Get guidance and automation
+- **📋 Templates** - Start from pre-built document templates
 
 See [Tool Grouping](docs/TOOL_GROUPING.md) for details.
 
@@ -238,7 +239,7 @@ uv run texflow
 
 ### Quick Start - 7 Unified Tools
 
-TeXFlow provides 7 semantic tools that intelligently guide your document workflow:
+TeXFlow provides 8 semantic tools that intelligently guide your document workflow:
 
 #### 1. `document` - Create, edit, and transform documents
 ```python
@@ -791,7 +792,7 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 
 ## Documentation
 
-- 📖 [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md) - Complete guide to the 7 semantic tools
+- 📖 [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md) - Complete guide to the 8 semantic tools
 - 🎯 [Tool Grouping](docs/TOOL_GROUPING.md) - Semantic organization and design rationale
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
 - 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
