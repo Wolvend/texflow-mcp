@@ -288,15 +288,16 @@ def output(
     printer: Optional[str] = None,
     output_path: Optional[str] = None
 ) -> str:
-    """Generate output from documents - print to paper or export to PDF.
+    """Generate output from documents - print to paper or export to various formats.
     
     BEST PRACTICES:
     - Use 'source' parameter with existing files instead of 'content' to avoid regeneration
-    - Export to PDF first if you need both digital and printed copies
+    - Default export format is PDF (most faithful to LaTeX)
+    - Supported formats: PDF, DOCX, ODT, RTF, HTML, EPUB
     
     Actions:
     - print: Send to physical printer (auto-converts to PDF if needed)
-    - export: Save as PDF without printing
+    - export: Save to various formats (PDF, DOCX, ODT, RTF, HTML, EPUB)
     """
     if action == "print":
         if not source and not content:
@@ -337,42 +338,63 @@ def output(
         if not source_path.exists():
             return f"❌ Error: Source file not found: {source_path}"
             
-        # Determine output path
+        # Determine output path and format
         if output_path:
-            pdf_path = resolve_path(output_path)
+            out_path = resolve_path(output_path)
+            output_format = out_path.suffix.lower()
         else:
-            pdf_path = source_path.with_suffix(".pdf")
+            out_path = source_path.with_suffix(".pdf")
+            output_format = ".pdf"
             
-        # Convert based on source type
-        if source_path.suffix == ".md":
-            # Markdown to PDF via pandoc
-            try:
-                subprocess.run(["pandoc", source_path, "-o", pdf_path, "--pdf-engine=xelatex"], check=True)
-                return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
-            except subprocess.CalledProcessError as e:
-                return f"❌ Error creating PDF: {e}"
-                
-        elif source_path.suffix == ".tex":
-            # LaTeX to PDF via xelatex
-            try:
-                # Run in the directory containing the file
-                result = subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
-                                      cwd=source_path.parent, check=True)
-                
-                # The PDF is created in the same directory as the .tex file
-                actual_pdf_path = source_path.with_suffix(".pdf")
-                
-                # Move to desired location if different
-                if output_path and pdf_path != actual_pdf_path:
-                    pdf_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(actual_pdf_path), str(pdf_path))
-                    return f"✓ PDF created: {pdf_path}\n💡 Next: output(action='print', source='{pdf_path}')"
+        # Supported output formats
+        supported_formats = {
+            ".pdf": "PDF document",
+            ".docx": "Word document", 
+            ".odt": "OpenDocument text",
+            ".rtf": "Rich Text Format",
+            ".html": "HTML webpage",
+            ".epub": "EPUB ebook"
+        }
+        
+        if output_format not in supported_formats:
+            return f"❌ Error: Unsupported output format '{output_format}'. Supported: {', '.join(supported_formats.keys())}"
+            
+        # Convert based on source type and output format
+        try:
+            if output_format == ".pdf":
+                # Special handling for PDF generation
+                if source_path.suffix == ".md":
+                    # Markdown to PDF via pandoc with XeLaTeX
+                    subprocess.run(["pandoc", source_path, "-o", out_path, "--pdf-engine=xelatex"], check=True)
+                elif source_path.suffix == ".tex":
+                    # LaTeX to PDF via xelatex directly
+                    result = subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
+                                          cwd=source_path.parent, check=True)
+                    # The PDF is created in the same directory as the .tex file
+                    actual_pdf_path = source_path.with_suffix(".pdf")
+                    # Move to desired location if different
+                    if output_path and out_path != actual_pdf_path:
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.move(str(actual_pdf_path), str(out_path))
                 else:
-                    return f"✓ PDF created: {actual_pdf_path}\n💡 Next: output(action='print', source='{actual_pdf_path}')"
-            except subprocess.CalledProcessError as e:
-                return f"❌ Error creating PDF: {e}"
-        else:
-            return f"❌ Error: Cannot export {source_path.suffix} to PDF"
+                    # Other formats to PDF via pandoc
+                    subprocess.run(["pandoc", source_path, "-o", out_path], check=True)
+            else:
+                # All other conversions via pandoc
+                if source_path.suffix in [".md", ".tex", ".rst", ".org", ".txt"]:
+                    subprocess.run(["pandoc", source_path, "-o", out_path], check=True)
+                else:
+                    return f"❌ Error: Cannot convert {source_path.suffix} to {output_format}"
+                    
+            # Success message with appropriate next action
+            if output_format == ".pdf":
+                return f"✓ {supported_formats[output_format]} created: {out_path}\n💡 Next: output(action='print', source='{out_path}')"
+            else:
+                # For non-PDF formats, suggest converting to PDF for printing
+                return f"✓ {supported_formats[output_format]} created: {out_path}\n💡 Next steps:\n→ To print: output(action='export', source='{out_path}', output_path='{out_path.with_suffix('.pdf')}')\n→ To view/share: Open {out_path} in appropriate application"
+                
+        except subprocess.CalledProcessError as e:
+            return f"❌ Error creating {supported_formats[output_format]}: {e}"
             
     else:
         return f"❌ Error: Unknown output action '{action}'. Available: print, export"
