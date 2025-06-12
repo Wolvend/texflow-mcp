@@ -26,8 +26,51 @@ mcp = FastMCP("texflow")
 SESSION_CONTEXT = {
     "current_project": None,
     "default_printer": None,
-    "last_used_format": None
+    "last_used_format": None,
+    "workspace_root": Path.cwd()  # Store the initial working directory
 }
+
+
+def resolve_path(path_str: Optional[str] = None, default_name: str = "document", 
+                 extension: str = ".txt", use_project: bool = True) -> Path:
+    """
+    Resolve a path intelligently based on context.
+    
+    Priority order:
+    1. If path is absolute, use it as-is
+    2. If path is relative and we have a current project, use project directory
+    3. If path is relative, use workspace root
+    4. If no path given and we have a project, use project content directory
+    5. If no path given, use workspace root
+    """
+    if path_str:
+        path = Path(path_str)
+        
+        # Absolute path - use as is
+        if path.is_absolute():
+            return path.expanduser()
+            
+        # Relative path with project context
+        if use_project and SESSION_CONTEXT["current_project"]:
+            project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
+            # If path starts with common project folders, use it directly
+            if str(path).startswith(("content/", "output/", "assets/")):
+                return project_base / path
+            else:
+                # Default to content directory for relative paths
+                return project_base / "content" / path
+        
+        # Relative path without project - use workspace
+        return SESSION_CONTEXT["workspace_root"] / path
+    
+    else:
+        # No path given - generate default
+        if use_project and SESSION_CONTEXT["current_project"]:
+            project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
+            return project_base / "content" / f"{default_name}{extension}"
+        else:
+            # Use workspace root
+            return SESSION_CONTEXT["workspace_root"] / f"{default_name}{extension}"
 
 
 @mcp.tool()
@@ -73,12 +116,8 @@ def document(
         # Determine file extension
         ext = ".tex" if format == "latex" else ".md"
         
-        # Create file path
-        if path:
-            file_path = Path(path).expanduser()
-        else:
-            # Use Documents folder
-            file_path = Path.home() / "Documents" / f"document{ext}"
+        # Create file path using intelligent resolution
+        file_path = resolve_path(path, "document", ext)
             
         # Write content
         try:
@@ -92,7 +131,8 @@ def document(
                 next_steps.append(f"→ Validate: document(action='validate', path='{file_path}')")
             next_steps.append(f"→ Export: output(action='export', source='{file_path}')")
             
-            return f"✓ Document created: {file_path}\n" + "\n".join(next_steps)
+            project_info = f" (Project: {SESSION_CONTEXT['current_project']})" if SESSION_CONTEXT['current_project'] else ""
+            return f"✓ Document created: {file_path}{project_info}\n" + "\n".join(next_steps)
         except Exception as e:
             return f"❌ Error creating document: {e}"
             
@@ -100,7 +140,7 @@ def document(
         if not path:
             return "❌ Error: Path required for read action"
             
-        file_path = Path(path).expanduser()
+        file_path = resolve_path(path)
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
@@ -118,7 +158,7 @@ def document(
         if not path or not old_string or not new_string:
             return "❌ Error: Path, old_string, and new_string required for edit action"
             
-        file_path = Path(path).expanduser()
+        file_path = resolve_path(path)
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
@@ -148,7 +188,7 @@ def document(
         if not source or not target_format:
             return "❌ Error: Source and target_format required for convert action"
             
-        source_path = Path(source).expanduser()
+        source_path = resolve_path(source)
         if not source_path.exists():
             return f"❌ Error: Source file not found: {source_path}"
             
@@ -167,7 +207,7 @@ def document(
         if not path:
             return "❌ Error: Path required for validate action"
             
-        file_path = Path(path).expanduser()
+        file_path = resolve_path(path)
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
@@ -224,7 +264,7 @@ def document(
         if not path:
             return "❌ Error: Path required for status action"
             
-        file_path = Path(path).expanduser()
+        file_path = resolve_path(path)
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
@@ -267,7 +307,7 @@ def output(
             printer = SESSION_CONTEXT["default_printer"]
             
         if source:
-            file_path = Path(source).expanduser()
+            file_path = resolve_path(source)
             if not file_path.exists():
                 return f"❌ Error: Source file not found: {file_path}"
                 
@@ -293,13 +333,13 @@ def output(
         if not source:
             return "❌ Error: Source required for export action"
             
-        source_path = Path(source).expanduser()
+        source_path = resolve_path(source)
         if not source_path.exists():
             return f"❌ Error: Source file not found: {source_path}"
             
         # Determine output path
         if output_path:
-            pdf_path = Path(output_path).expanduser()
+            pdf_path = resolve_path(output_path)
         else:
             pdf_path = source_path.with_suffix(".pdf")
             
@@ -537,7 +577,7 @@ def archive(
         if not path:
             return "❌ Error: Path required for archive action"
             
-        file_path = Path(path).expanduser()
+        file_path = resolve_path(path)
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
