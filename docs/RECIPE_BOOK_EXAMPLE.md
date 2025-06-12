@@ -2,6 +2,31 @@
 
 This example demonstrates creating a family recipe book using TeXFlow's complete workflow.
 
+## How an AI Agent Operates TeXFlow
+
+As an AI agent using TeXFlow, I navigate the document creation process through semantic tool operations. Here's how I work:
+
+### 1. Following Semantic Operations
+Instead of memorizing 30+ individual tools, I use 7 semantic operations (document, output, project, etc.) with action parameters. The consistent pattern `tool(action='...', parameters)` makes navigation intuitive.
+
+### 2. Using Tool Hints
+Each tool response includes `💡 Next:` suggestions that guide my next actions:
+- After creating content → suggests read, edit, or export
+- After validation failure → suggests edit to fix specific errors
+- After export → suggests print or archive
+
+### 3. Project Context Awareness
+Once I create a project, TeXFlow maintains context. I don't track exact file paths - the system handles path resolution within the project structure.
+
+### 4. Validation Feedback Loops
+When validation fails, I receive specific error information rather than generic messages. This allows targeted fixes without guessing.
+
+### 5. Conversion Over Recreation
+I use the `convert` action to transform existing documents between formats, preserving content while changing presentation.
+
+### 6. Modular Content Strategy
+I create individual documents (intro, recipes) then combine them, making content reusable and maintainable.
+
 ## Project Setup
 
 ```python
