@@ -178,6 +178,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
             
         # Relative path with project context
         if use_project and SESSION_CONTEXT["current_project"]:
+            # current_project now contains the full relative path from TeXFlow root
             project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
             # If path starts with common project folders, use it directly
             if str(path).startswith(("content/", "output/", "assets/")):
@@ -192,6 +193,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
     else:
         # No path given - generate default
         if use_project and SESSION_CONTEXT["current_project"]:
+            # current_project now contains the full relative path from TeXFlow root
             project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
             return project_base / "content" / f"{default_name}{extension}"
         else:
@@ -570,7 +572,7 @@ def project(
             }
             
             (project_dir / ".texflow_project.json").write_text(json.dumps(info, indent=2))
-            SESSION_CONTEXT["current_project"] = name
+            SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
             
             return f"✓ Project created: {project_dir}\n💡 Structure:\n  - content/ (for source files)\n  - output/pdf/ (for PDFs)\n  - assets/ (for images/data)\n💡 Next: document(action='create', content='...', path='content/intro.md')"
         except Exception as e:
@@ -580,12 +582,38 @@ def project(
         if not name:
             return "❌ Error: Name required for switch action"
             
-        project_dir = base_dir / name
-        if not project_dir.exists():
-            return f"❌ Error: Project '{name}' not found"
+        # Handle both simple names and paths
+        if '/' in name:
+            # Full path provided
+            project_dir = base_dir / name
+        else:
+            # Simple name - try to find it
+            project_dir = base_dir / name
             
-        SESSION_CONTEXT["current_project"] = name
-        return f"✓ Switched to project: {name}"
+        # Check if it's a valid project (has .texflow_project.json)
+        if not project_dir.exists() or not (project_dir / ".texflow_project.json").exists():
+            # Try to find the project in nested directories
+            found_projects = []
+            for p in base_dir.rglob(".texflow_project.json"):
+                project_path = p.parent
+                project_rel_path = project_path.relative_to(base_dir)
+                if project_path.name == name or str(project_rel_path) == name:
+                    found_projects.append(str(project_rel_path))
+            
+            if len(found_projects) == 1:
+                # Found exactly one match
+                name = found_projects[0]
+                project_dir = base_dir / name
+            elif len(found_projects) > 1:
+                return f"❌ Error: Multiple projects found with name '{name}':\n" + \
+                       "\n".join(f"  - {p}" for p in found_projects) + \
+                       "\n💡 Use the full path to specify which one"
+            else:
+                return f"❌ Error: Project '{name}' not found"
+        
+        # Store the full relative path from TeXFlow root
+        SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
+        return f"✓ Switched to project: {SESSION_CONTEXT['current_project']}"
         
     elif action == "list":
         if not base_dir.exists():
@@ -640,6 +668,7 @@ def project(
         if not current:
             return "No project currently active. Use project(action='switch') or project(action='import') to activate one."
             
+        # Current is now a full path relative to base_dir
         project_dir = base_dir / current
         if not project_dir.exists():
             SESSION_CONTEXT["current_project"] = None
@@ -667,9 +696,11 @@ def project(
         current = SESSION_CONTEXT.get("current_project")
         if not current:
             return "No project is currently active"
-            
+        
+        # Extract just the project name for display
+        project_name = Path(current).name
         SESSION_CONTEXT["current_project"] = None
-        return f"✓ Closed project '{current}'. File operations will now use default paths."
+        return f"✓ Closed project '{project_name}'. File operations will now use default paths."
         
     elif action == "import":
         if not name:
@@ -726,7 +757,7 @@ def project(
             }
             
             (project_dir / ".texflow_project.json").write_text(json.dumps(info, indent=2))
-            SESSION_CONTEXT["current_project"] = project_dir.name
+            SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
             
             result = f"✓ Project imported: {project_dir.name}\n"
             if moved_files:
@@ -944,6 +975,7 @@ def archive(
         # Find files matching pattern
         base_path = Path.cwd()
         if SESSION_CONTEXT.get("current_project"):
+            # current_project now contains the full relative path from TeXFlow root
             base_path = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"] / "content"
             
         files = list(base_path.glob(pattern))
@@ -1114,6 +1146,7 @@ def templates(
             dest_path = resolve_path(target, use_project=False)
         elif SESSION_CONTEXT["current_project"]:
             # Copy to current project's content directory
+            # current_project now contains the full relative path from TeXFlow root
             project_root = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
             dest_path = project_root / "content" / f"{name}-from-template"
         else:
@@ -1149,8 +1182,28 @@ def templates(
         else:
             return "❌ Error: No current project. Use source parameter or switch to a project first"
         
-        project_dir = Path.home() / "Documents" / "TeXFlow" / project_name
-        if not project_dir.exists():
+        # Handle both simple names and full paths
+        if '/' in project_name:
+            # Assume it's a full path relative to TeXFlow root
+            project_dir = Path.home() / "Documents" / "TeXFlow" / project_name
+        else:
+            # Try to find project by name
+            base_dir = Path.home() / "Documents" / "TeXFlow"
+            found_projects = []
+            for p in base_dir.rglob(".texflow_project.json"):
+                if p.parent.name == project_name:
+                    found_projects.append(p.parent)
+            
+            if len(found_projects) == 1:
+                project_dir = found_projects[0]
+                project_name = str(project_dir.relative_to(base_dir))
+            elif len(found_projects) > 1:
+                return f"❌ Error: Multiple projects found with name '{project_name}'. Use source parameter with full path."
+            else:
+                # Try direct path
+                project_dir = base_dir / project_name
+        
+        if not project_dir.exists() or not (project_dir / ".texflow_project.json").exists():
             return f"❌ Error: Project '{project_name}' not found"
         
         template_path = TEMPLATES_DIR / category / name
