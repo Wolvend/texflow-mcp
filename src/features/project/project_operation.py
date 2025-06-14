@@ -5,6 +5,12 @@ Manages document projects with intelligent organization.
 """
 
 from typing import Dict, Any, List, Optional
+import sys
+from pathlib import Path
+
+# Import the texflow module to access the actual project functions
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+import texflow
 
 
 class ProjectOperation:
@@ -29,6 +35,7 @@ class ProjectOperation:
             - list: List all projects
             - info: Get current project info
             - close: Close current project and return to Documents mode
+            - import: Import an existing directory as a TeXFlow project
             - archive: Archive a project (future)
         """
         action_map = {
@@ -37,6 +44,7 @@ class ProjectOperation:
             "list": self._list_projects,
             "info": self._project_info,
             "close": self._close_project,
+            "import": self._import_project,
             "archive": self._archive_project
         }
         
@@ -78,6 +86,12 @@ class ProjectOperation:
                     "required_params": [],
                     "optional_params": []
                 },
+                "import": {
+                    "description": "Import an existing directory as a TeXFlow project",
+                    "required_params": ["name"],
+                    "optional_params": ["description"],
+                    "features": ["auto_organization", "file_migration", "structure_creation"]
+                },
                 "archive": {
                     "description": "Archive a project",
                     "required_params": ["name"],
@@ -106,7 +120,7 @@ class ProjectOperation:
         
         try:
             # Use the original create_project function
-            result = self.texflow.create_project(name, description or template)
+            result = self.texflow.project("create", name, description or template)
             
             # Parse result to extract project info
             project_path = self._extract_project_path(result)
@@ -137,13 +151,23 @@ class ProjectOperation:
             return {"error": "Project name is required"}
         
         try:
-            result = self.texflow.use_project(name)
+            # Call the actual texflow project function
+            result = texflow.project("switch", name)
+            
+            # Check if it was successful (texflow functions return strings)
+            if "❌" in result or "Error" in result:
+                return {
+                    "success": False,
+                    "error": result,
+                    "project_name": name,
+                    "hint": "Use project(action='list') to see available projects"
+                }
             
             return {
                 "success": True,
                 "action": "switch",
                 "project_name": name,
-                "message": f"Switched to project: {name}",
+                "message": result,
                 "hint": "All document operations will now use this project"
             }
             
@@ -160,7 +184,8 @@ class ProjectOperation:
         sort_by = params.get("sort_by", "modified")  # name, created, modified
         
         try:
-            result = self.texflow.list_projects()
+            # Call the actual texflow project function
+            result = texflow.project("list")
             
             # Parse the result to extract project list
             projects = self._parse_project_list(result)
@@ -177,15 +202,24 @@ class ProjectOperation:
             else:  # modified
                 projects.sort(key=lambda p: p.get("modified", ""), reverse=True)
             
-            return {
+            # Separate projects and importable directories
+            active_projects = [p for p in projects if p.get("type") == "project"]
+            importable_dirs = [p for p in projects if p.get("type") == "importable"]
+            
+            response = {
                 "success": True,
                 "action": "list",
-                "projects": projects,
-                "count": len(projects),
+                "projects": active_projects,
+                "importable_directories": importable_dirs,
+                "total_count": len(projects),
+                "project_count": len(active_projects),
+                "importable_count": len(importable_dirs),
                 "filtered": bool(filter_term),
                 "sorted_by": sort_by,
-                "message": f"Found {len(projects)} project(s)"
+                "message": f"Found {len(active_projects)} project(s) and {len(importable_dirs)} importable directories"
             }
+            
+            return response
             
         except Exception as e:
             return {"error": str(e)}
@@ -195,7 +229,8 @@ class ProjectOperation:
         detailed = params.get("detailed", False)
         
         try:
-            result = self.texflow.project_info()
+            # Call the actual texflow project function
+            result = texflow.project("info")
             
             # Check if no project is active
             if "no project" in result.lower() or "not in a project" in result.lower():
@@ -236,7 +271,7 @@ class ProjectOperation:
     def _close_project(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Close the current project."""
         try:
-            result = self.texflow.close_project()
+            result = self.texflow.project("close")
             
             # Check if no project was active
             if "no project is currently active" in result.lower():
@@ -262,6 +297,60 @@ class ProjectOperation:
             
         except Exception as e:
             return {"error": str(e)}
+    
+    def _import_project(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """Import an existing directory as a TeXFlow project."""
+        name = params.get("name")
+        description = params.get("description", "")
+        
+        if not name:
+            return {"error": "Directory name/path is required for import"}
+        
+        # Call the underlying import function
+        try:
+            # For nested paths like "projects/agent-attractor-states"
+            result = self.texflow.project("import", name, description)
+            
+            # Parse result to extract import info
+            import re
+            name_match = re.search(r"Project imported: (.+?)(?:\n|$)", result)
+            project_name = name_match.group(1) if name_match else name
+            
+            # Check if files were moved
+            moved_match = re.search(r"Moved (\d+) files", result)
+            files_moved = int(moved_match.group(1)) if moved_match else 0
+            
+            response = {
+                "success": True,
+                "action": "import",
+                "project_name": project_name,
+                "message": f"Successfully imported '{project_name}' as a TeXFlow project",
+                "files_organized": files_moved,
+                "structure_created": ["content/", "output/pdf/", "assets/"],
+                "current_project": project_name,
+                "next_steps": [
+                    "Use document(action='read') to view existing files",
+                    "Use document(action='convert') to transform between formats",
+                    "Use output(action='export') to generate PDFs"
+                ]
+            }
+            
+            if files_moved > 0:
+                response["organization_note"] = f"Moved {files_moved} document files to content/ directory"
+                
+            return response
+            
+        except Exception as e:
+            # Check if it's because project already exists
+            if "already a TeXFlow project" in str(e):
+                return {
+                    "error": f"Directory '{name}' is already a TeXFlow project",
+                    "hint": f"Use project(action='switch', name='{name}') to activate it"
+                }
+            return {
+                "error": str(e),
+                "hint": "Check that the directory exists and contains document files"
+            }
     
     def _archive_project(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Archive a project (future feature)."""
@@ -303,42 +392,54 @@ class ProjectOperation:
     def _parse_project_list(self, result: str) -> List[Dict[str, Any]]:
         """Parse project list from tool result."""
         projects = []
+        importable = []
+        in_projects_section = False
+        in_importable_section = False
         
-        # Simple parsing - look for project entries
         lines = result.split('\n')
-        current_project = {}
         
         for line in lines:
-            line = line.strip()
-            if not line:
-                if current_project:
-                    projects.append(current_project)
-                    current_project = {}
+            line_stripped = line.strip()
+            
+            # Check section headers
+            if line_stripped.startswith("Projects:"):
+                in_projects_section = True
+                in_importable_section = False
+                continue
+            elif "Directories available for import:" in line_stripped:
+                in_projects_section = False
+                in_importable_section = True
                 continue
             
-            # Parse different formats
-            if line.startswith('- ') or line.startswith('* '):
-                # Bullet list format
-                name = line[2:].split(':')[0].strip()
-                current_project = {"name": name}
-            elif ':' in line:
-                # Key: value format
-                key, value = line.split(':', 1)
-                key = key.strip().lower().replace(' ', '_')
-                current_project[key] = value.strip()
+            # Parse entries
+            if line_stripped.startswith('- '):
+                item = line_stripped[2:].strip()
+                
+                if in_projects_section:
+                    # Parse project entries
+                    name = item.split(' (current)')[0].strip()
+                    is_current = '(current)' in item
+                    projects.append({
+                        "name": name,
+                        "type": "project",
+                        "is_current": is_current
+                    })
+                elif in_importable_section:
+                    # Parse importable directory entries
+                    # Extract path from format: "path (use: project(action='import', name='path'))"
+                    import re
+                    path_match = re.match(r'^(.+?)\s*\(use:', item)
+                    if path_match:
+                        path = path_match.group(1).strip()
+                        importable.append({
+                            "name": path,
+                            "type": "importable",
+                            "action_hint": f"project(action='import', name='{path}')"
+                        })
         
-        # Add last project if exists
-        if current_project:
-            projects.append(current_project)
-        
-        # If no structured data found, try simple parsing
-        if not projects and result:
-            # Look for project names in the result
-            for line in lines:
-                if line and not line.startswith(' '):
-                    projects.append({"name": line.strip()})
-        
-        return projects
+        # Combine results
+        all_items = projects + importable
+        return all_items
     
     def _parse_project_info(self, result: str) -> Dict[str, Any]:
         """Parse project info from tool result."""

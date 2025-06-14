@@ -178,6 +178,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
             
         # Relative path with project context
         if use_project and SESSION_CONTEXT["current_project"]:
+            # current_project now contains the full relative path from TeXFlow root
             project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
             # If path starts with common project folders, use it directly
             if str(path).startswith(("content/", "output/", "assets/")):
@@ -192,6 +193,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
     else:
         # No path given - generate default
         if use_project and SESSION_CONTEXT["current_project"]:
+            # current_project now contains the full relative path from TeXFlow root
             project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
             return project_base / "content" / f"{default_name}{extension}"
         else:
@@ -537,8 +539,9 @@ def project(
     Actions:
     - create: Create new project with AI-guided structure
     - switch: Change active project
-    - list: Show all projects
+    - list: Show all projects (including importable directories)
     - info: Get current project details
+    - import: Import an existing directory as a TeXFlow project
     """
     base_dir = Path.home() / "Documents" / "TeXFlow"
     
@@ -569,7 +572,7 @@ def project(
             }
             
             (project_dir / ".texflow_project.json").write_text(json.dumps(info, indent=2))
-            SESSION_CONTEXT["current_project"] = name
+            SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
             
             return f"✓ Project created: {project_dir}\n💡 Structure:\n  - content/ (for source files)\n  - output/pdf/ (for PDFs)\n  - assets/ (for images/data)\n💡 Next: document(action='create', content='...', path='content/intro.md')"
         except Exception as e:
@@ -579,34 +582,198 @@ def project(
         if not name:
             return "❌ Error: Name required for switch action"
             
-        project_dir = base_dir / name
-        if not project_dir.exists():
-            return f"❌ Error: Project '{name}' not found"
+        # Handle both simple names and paths
+        if '/' in name:
+            # Full path provided
+            project_dir = base_dir / name
+        else:
+            # Simple name - try to find it
+            project_dir = base_dir / name
             
-        SESSION_CONTEXT["current_project"] = name
-        return f"✓ Switched to project: {name}"
+        # Check if it's a valid project (has .texflow_project.json)
+        if not project_dir.exists() or not (project_dir / ".texflow_project.json").exists():
+            # Try to find the project in nested directories
+            found_projects = []
+            for p in base_dir.rglob(".texflow_project.json"):
+                project_path = p.parent
+                project_rel_path = project_path.relative_to(base_dir)
+                if project_path.name == name or str(project_rel_path) == name:
+                    found_projects.append(str(project_rel_path))
+            
+            if len(found_projects) == 1:
+                # Found exactly one match
+                name = found_projects[0]
+                project_dir = base_dir / name
+            elif len(found_projects) > 1:
+                return f"❌ Error: Multiple projects found with name '{name}':\n" + \
+                       "\n".join(f"  - {p}" for p in found_projects) + \
+                       "\n💡 Use the full path to specify which one"
+            else:
+                return f"❌ Error: Project '{name}' not found"
+        
+        # Store the full relative path from TeXFlow root
+        SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
+        return f"✓ Switched to project: {SESSION_CONTEXT['current_project']}"
         
     elif action == "list":
         if not base_dir.exists():
-            return "No projects found"
+            return "No projects or directories found"
             
+        # Separate projects and importable directories
         projects = []
-        for p in base_dir.iterdir():
-            if p.is_dir() and (p / ".texflow_project.json").exists():
-                projects.append(p.name)
-                
-        if not projects:
-            return "No projects found"
+        importable_dirs = []
+        
+        # Check all subdirectories including nested ones
+        for p in base_dir.rglob("*"):
+            if p.is_dir():
+                # Skip hidden directories and __pycache__
+                if any(part.startswith('.') or part == '__pycache__' for part in p.relative_to(base_dir).parts):
+                    continue
+                    
+                # Check if it's a proper project
+                if (p / ".texflow_project.json").exists():
+                    projects.append(p.relative_to(base_dir))
+                else:
+                    # Check if it has any content files that could be imported
+                    has_content = any(p.glob("*.md")) or any(p.glob("*.tex")) or any(p.glob("*.txt"))
+                    if has_content:
+                        importable_dirs.append(p.relative_to(base_dir))
+        
+        if not projects and not importable_dirs:
+            return "No projects or directories found"
             
         current = SESSION_CONTEXT.get("current_project")
-        result = "Projects:\n"
-        for p in sorted(projects):
-            marker = " (current)" if p == current else ""
-            result += f"  - {p}{marker}\n"
+        result = ""
+        
+        # List active projects
+        if projects:
+            result += "Projects:\n"
+            for p in sorted(projects, key=str):
+                marker = " (current)" if str(p) == current else ""
+                result += f"  - {p}{marker}\n"
+        
+        # List importable directories
+        if importable_dirs:
+            if projects:
+                result += "\nDirectories available for import:\n"
+            else:
+                result += "Directories available for import:\n"
+            for d in sorted(importable_dirs, key=str):
+                result += f"  - {d} (use: project(action='import', name='{d}'))\n"
+                
         return result
+    
+    elif action == "info":
+        current = SESSION_CONTEXT.get("current_project")
+        if not current:
+            return "No project currently active. Use project(action='switch') or project(action='import') to activate one."
+            
+        # Current is now a full path relative to base_dir
+        project_dir = base_dir / current
+        if not project_dir.exists():
+            SESSION_CONTEXT["current_project"] = None
+            return f"❌ Error: Current project '{current}' directory not found"
+            
+        try:
+            info_file = project_dir / ".texflow_project.json"
+            if info_file.exists():
+                info = json.loads(info_file.read_text())
+                result = f"Project: {info['name']}\n"
+                if info.get('description'):
+                    result += f"Description: {info['description']}\n"
+                result += f"Created: {info.get('created', 'Unknown')}\n"
+                result += f"Path: {project_dir}\n"
+                result += "Structure:\n"
+                for folder, desc in info.get('structure', {}).items():
+                    result += f"  - {folder}: {desc}\n"
+                return result
+            else:
+                return f"Project: {current}\nPath: {project_dir}\n⚠️  No project metadata found"
+        except Exception as e:
+            return f"❌ Error reading project info: {e}"
+    
+    elif action == "close":
+        current = SESSION_CONTEXT.get("current_project")
+        if not current:
+            return "No project is currently active"
+        
+        # Extract just the project name for display
+        project_name = Path(current).name
+        SESSION_CONTEXT["current_project"] = None
+        return f"✓ Closed project '{project_name}'. File operations will now use default paths."
+        
+    elif action == "import":
+        if not name:
+            return "❌ Error: Name required for import action"
+        
+        # Handle nested paths by converting to Path object
+        import_path = Path(name)
+        if import_path.is_absolute():
+            project_dir = import_path
+            name = project_dir.name
+        else:
+            project_dir = base_dir / name
+            
+        if not project_dir.exists():
+            return f"❌ Error: Directory '{name}' not found"
+            
+        # Check if already a project
+        if (project_dir / ".texflow_project.json").exists():
+            return f"❌ Error: '{name}' is already a TeXFlow project. Use project(action='switch', name='{name}') instead."
+            
+        try:
+            # Create standard project directories if they don't exist
+            content_dir = project_dir / "content"
+            output_dir = project_dir / "output" / "pdf"
+            assets_dir = project_dir / "assets"
+            
+            # Create directories only if they don't exist
+            content_dir.mkdir(exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            assets_dir.mkdir(exist_ok=True)
+            
+            # Move existing files to appropriate directories
+            moved_files = []
+            for file in project_dir.iterdir():
+                if file.is_file() and file.suffix in ['.md', '.tex', '.txt']:
+                    # Only move if not already in content directory
+                    if file.parent == project_dir:
+                        new_path = content_dir / file.name
+                        if not new_path.exists():
+                            file.rename(new_path)
+                            moved_files.append(file.name)
+            
+            # Create project info
+            info = {
+                "name": project_dir.name,
+                "description": description or f"Imported from existing directory",
+                "created": datetime.now().isoformat(),
+                "imported": True,
+                "structure": {
+                    "content": "Source documents (Markdown, LaTeX)",
+                    "output/pdf": "Generated PDFs",
+                    "assets": "Images, data, references"
+                }
+            }
+            
+            (project_dir / ".texflow_project.json").write_text(json.dumps(info, indent=2))
+            SESSION_CONTEXT["current_project"] = str(project_dir.relative_to(base_dir))
+            
+            result = f"✓ Project imported: {project_dir.name}\n"
+            if moved_files:
+                result += f"📁 Moved {len(moved_files)} files to content/:\n"
+                for f in moved_files[:5]:  # Show first 5 files
+                    result += f"  - {f}\n"
+                if len(moved_files) > 5:
+                    result += f"  ... and {len(moved_files) - 5} more\n"
+            result += "💡 Project structure organized and ready to use"
+            return result
+            
+        except Exception as e:
+            return f"❌ Error importing project: {e}"
         
     else:
-        return f"❌ Error: Unknown project action '{action}'. Available: create, switch, list, info"
+        return f"❌ Error: Unknown project action '{action}'. Available: create, switch, list, info, close, import"
 
 
 @mcp.tool()
@@ -808,6 +975,7 @@ def archive(
         # Find files matching pattern
         base_path = Path.cwd()
         if SESSION_CONTEXT.get("current_project"):
+            # current_project now contains the full relative path from TeXFlow root
             base_path = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"] / "content"
             
         files = list(base_path.glob(pattern))
@@ -917,16 +1085,15 @@ def templates(
 ) -> str:
     """Manage LaTeX document templates for quick project starts.
     
-    Templates are organized by category (research, book, letter, etc.) and stored
-    in ~/Documents/TeXFlow/templates/. Each template can include .tex files, 
-    bibliographies, style files, and assets.
+    Templates are pure content collections (no project metadata) organized by 
+    category in ~/Documents/TeXFlow/templates/. To create or edit templates, 
+    work on them as regular projects first, then activate them as templates.
     
     Actions:
     - list: Show available templates (optionally filtered by category)
     - use: Copy a template to current project or specified location
+    - activate: Convert current project into a template (moves to templates dir)
     - create: Create a new template from content or existing document
-    - copy: Duplicate an existing template with a new name
-    - edit: Modify an existing template
     - rename: Rename a template
     - delete: Remove a template
     - info: Get details about a specific template
@@ -979,6 +1146,7 @@ def templates(
             dest_path = resolve_path(target, use_project=False)
         elif SESSION_CONTEXT["current_project"]:
             # Copy to current project's content directory
+            # current_project now contains the full relative path from TeXFlow root
             project_root = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
             dest_path = project_root / "content" / f"{name}-from-template"
         else:
@@ -1001,6 +1169,86 @@ def templates(
 → Customize and start working on your document"""
         except Exception as e:
             return f"❌ Error copying template: {e}"
+    
+    elif action == "activate":
+        if not category or not name:
+            return "❌ Error: Both category and name required for activate action"
+        
+        # Get current project or use source parameter
+        if source:
+            project_name = source
+        elif SESSION_CONTEXT.get("current_project"):
+            project_name = SESSION_CONTEXT["current_project"]
+        else:
+            return "❌ Error: No current project. Use source parameter or switch to a project first"
+        
+        # Handle both simple names and full paths
+        if '/' in project_name:
+            # Assume it's a full path relative to TeXFlow root
+            project_dir = Path.home() / "Documents" / "TeXFlow" / project_name
+        else:
+            # Try to find project by name
+            base_dir = Path.home() / "Documents" / "TeXFlow"
+            found_projects = []
+            for p in base_dir.rglob(".texflow_project.json"):
+                if p.parent.name == project_name:
+                    found_projects.append(p.parent)
+            
+            if len(found_projects) == 1:
+                project_dir = found_projects[0]
+                project_name = str(project_dir.relative_to(base_dir))
+            elif len(found_projects) > 1:
+                return f"❌ Error: Multiple projects found with name '{project_name}'. Use source parameter with full path."
+            else:
+                # Try direct path
+                project_dir = base_dir / project_name
+        
+        if not project_dir.exists() or not (project_dir / ".texflow_project.json").exists():
+            return f"❌ Error: Project '{project_name}' not found"
+        
+        template_path = TEMPLATES_DIR / category / name
+        if template_path.exists():
+            return f"❌ Error: Template '{category}/{name}' already exists"
+        
+        try:
+            # Create category directory if needed
+            template_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copy content files only (not project metadata)
+            for item in project_dir.iterdir():
+                if item.name == ".texflow_project.json":
+                    continue  # Skip project metadata
+                elif item.name in ['.git', '__pycache__', '.DS_Store', '.texflow_archive']:
+                    continue  # Skip system/hidden directories
+                elif item.is_dir() and item.name == "output":
+                    continue  # Skip output directory
+                elif item.is_dir() and item.name == "content":
+                    # Copy contents of content directory directly
+                    for content_item in item.iterdir():
+                        if content_item.is_file():
+                            shutil.copy2(content_item, template_path / content_item.name)
+                        else:
+                            shutil.copytree(content_item, template_path / content_item.name)
+                elif item.is_file():
+                    shutil.copy2(item, template_path / item.name)
+                elif item.is_dir() and item.name == "assets":
+                    # Include assets directory
+                    shutil.copytree(item, template_path / item.name)
+            
+            # Remove the original project
+            shutil.rmtree(project_dir)
+            
+            # Clear from session if it was the current project
+            if SESSION_CONTEXT.get("current_project") == project_name:
+                SESSION_CONTEXT["current_project"] = None
+            
+            return f"""✓ Project '{project_name}' activated as template: {category}/{name}
+📁 Template created with content from project
+🗑️  Original project removed
+💡 Next: templates(action='use', category='{category}', name='{name}') to use this template"""
+            
+        except Exception as e:
+            return f"❌ Error activating template: {e}"
             
     elif action == "create":
         if not category or not name:
@@ -1056,56 +1304,11 @@ Start your document here.
             
             return f"""✓ Template created: {category}/{name}
 💡 Next steps:
-→ Edit template: templates(action='edit', category='{category}', name='{name}')
-→ Use template: templates(action='use', category='{category}', name='{name}')"""
+→ Use template: templates(action='use', category='{category}', name='{name}')
+→ To edit: Create a project from it, modify, then activate again"""
         except Exception as e:
             return f"❌ Error creating template: {e}"
             
-    elif action == "copy":
-        if not category or not name or not target:
-            return "❌ Error: Category, name, and target required for copy action"
-            
-        source_path = TEMPLATES_DIR / category / name
-        if not source_path.exists():
-            return f"❌ Error: Template '{category}/{name}' not found"
-            
-        # Parse target as category/name or just name (same category)
-        if '/' in target:
-            target_cat, target_name = target.split('/', 1)
-        else:
-            target_cat, target_name = category, target
-            
-        target_path = TEMPLATES_DIR / target_cat / target_name
-        
-        try:
-            if target_path.exists():
-                return f"❌ Error: Target template already exists: {target_cat}/{target_name}"
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source_path, target_path)
-            return f"""✓ Template copied: {category}/{name} → {target_cat}/{target_name}
-💡 Next: templates(action='edit', category='{target_cat}', name='{target_name}')"""
-        except Exception as e:
-            return f"❌ Error copying template: {e}"
-            
-    elif action == "edit":
-        if not category or not name:
-            return "❌ Error: Both category and name required for edit action"
-            
-        template_path = TEMPLATES_DIR / category / name
-        if not template_path.exists():
-            return f"❌ Error: Template '{category}/{name}' not found"
-            
-        # Find main .tex file
-        tex_files = list(template_path.glob("*.tex"))
-        if not tex_files:
-            return f"❌ Error: No .tex files found in template '{category}/{name}'"
-            
-        main_tex = tex_files[0]  # Use first .tex file found
-        
-        return f"""📄 Template location: {template_path}
-Main file: {main_tex}
-💡 Edit with: document(action='edit', path='{main_tex}')"""
-        
     elif action == "rename":
         if not category or not name or not target:
             return "❌ Error: Category, name, and target required for rename action"
@@ -1173,13 +1376,12 @@ Files:
   
 💡 Next steps:
 → Use: templates(action='use', category='{category}', name='{name}')
-→ Edit: templates(action='edit', category='{category}', name='{name}')
-→ Copy: templates(action='copy', category='{category}', name='{name}', target='new-name')"""
+→ To modify: Use it in a project, edit, then activate as a new template"""
         
         return info
         
     else:
-        return f"❌ Error: Unknown templates action '{action}'. Available: list, use, create, copy, edit, rename, delete, info"
+        return f"❌ Error: Unknown templates action '{action}'. Available: list, use, activate, create, rename, delete, info"
 
 
 def main():

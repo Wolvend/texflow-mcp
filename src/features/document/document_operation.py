@@ -7,6 +7,11 @@ Bundles document-related tools into a unified semantic interface.
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import re
+import sys
+
+# Import the resolve_path function and session context from the main texflow module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+import texflow
 
 
 class DocumentOperation:
@@ -137,22 +142,23 @@ class DocumentOperation:
         if not filename.endswith(f".{format_type[:3]}"):
             filename = f"{filename}.{format_type[:3]}"
         
-        # Use original tools based on format
+        # Use resolve_path to determine the correct location
         try:
-            if format_type == "markdown":
-                result = self.texflow.save_markdown(content, filename)
-            elif format_type == "latex":
-                result = self.texflow.save_latex(content, filename)
-            else:
-                return {"error": f"Unsupported format: {format_type}"}
+            # Determine file extension
+            ext = ".tex" if format_type == "latex" else ".md"
             
-            # Parse result and add metadata
-            path = self._extract_path_from_result(result)
+            # Create file path using intelligent resolution
+            file_path = texflow.resolve_path(filename, "document", ext)
+            
+            # Write content
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(content)
+            
             return {
                 "success": True,
-                "path": path,
+                "path": str(file_path),
                 "format": format_type,
-                "message": f"Document created: {path}",
+                "message": f"Document created: {file_path}",
                 "size": len(content),
                 "intent_detected": intent or "general document"
             }
@@ -174,19 +180,42 @@ class DocumentOperation:
             return {"error": "Path parameter is required"}
         
         try:
-            result = self.texflow.read_document(path, offset, limit)
+            # Use resolve_path to get the correct path considering project context
+            file_path = texflow.resolve_path(path)
+            
+            if not file_path.exists():
+                return {"error": f"File not found: {file_path}"}
+            
+            # Read file contents
+            content = file_path.read_text()
+            lines = content.splitlines()
+            
+            # Apply offset and limit
+            start_line = max(0, offset - 1)  # Convert to 0-based indexing
+            end_line = start_line + limit if limit else len(lines)
+            selected_lines = lines[start_line:end_line]
+            
+            # Format with line numbers like the original
+            formatted_lines = []
+            for i, line in enumerate(selected_lines, start=offset):
+                formatted_lines.append(f"{i:4d}\t{line}")
+            
+            result_content = "\n".join(formatted_lines)
+            if len(lines) > end_line:
+                result_content += f"\n... ({len(lines)} total lines)"
             
             # Detect format from extension
-            format_type = self._detect_format_from_path(path)
+            format_type = self._detect_format_from_path(str(file_path))
             
             return {
                 "success": True,
-                "content": result,
-                "path": path,
+                "content": result_content,
+                "path": str(file_path),
                 "format": format_type,
-                "lines_read": result.count('\n'),
+                "lines_read": len(selected_lines),
                 "offset": offset,
-                "limit": limit
+                "limit": limit,
+                "total_lines": len(lines)
             }
             
         except Exception as e:
@@ -195,51 +224,45 @@ class DocumentOperation:
     def _edit_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Edit existing document."""
         path = params.get("path")
-        changes = params.get("changes", [])
+        old_string = params.get("old_string")
+        new_string = params.get("new_string")
         validate_after = params.get("validate_after", False)
         
         if not path:
             return {"error": "Path parameter is required"}
         
-        if not changes:
-            return {"error": "Changes parameter is required"}
+        if not old_string or not new_string:
+            return {"error": "old_string and new_string parameters are required"}
         
         try:
-            # Handle different change formats
-            if isinstance(changes, list):
-                # Multiple changes
-                for change in changes:
-                    old_string = change.get("old")
-                    new_string = change.get("new")
-                    expected = change.get("expected_replacements", 1)
-                    
-                    result = self.texflow.edit_document(
-                        path, old_string, new_string, expected
-                    )
-            else:
-                # Single change
-                result = self.texflow.edit_document(
-                    path, 
-                    changes.get("old"), 
-                    changes.get("new"),
-                    changes.get("expected_replacements", 1)
-                )
+            # Use resolve_path to get the correct path considering project context
+            file_path = texflow.resolve_path(path)
+            
+            if not file_path.exists():
+                return {"error": f"File not found: {file_path}"}
+            
+            # Read and edit file
+            content = file_path.read_text()
+            if old_string not in content:
+                return {"error": f"String '{old_string}' not found in file"}
+            
+            new_content = content.replace(old_string, new_string, 1)
+            file_path.write_text(new_content)
             
             response = {
                 "success": True,
-                "path": path,
+                "path": str(file_path),
                 "message": "Document edited successfully",
-                "changes_applied": len(changes) if isinstance(changes, list) else 1
+                "changes_applied": 1
             }
             
             # Optionally validate after edit
             if validate_after:
-                format_type = self._detect_format_from_path(path)
+                format_type = self._detect_format_from_path(str(file_path))
                 if format_type == "latex":
                     # Read content for validation
-                    content = self.texflow.read_document(path)
-                    validation = self.texflow.validate_latex(content)
-                    response["validation"] = validation
+                    validation_result = self._validate_latex_content(new_content)
+                    response["validation"] = validation_result
             
             return response
             
@@ -264,24 +287,37 @@ class DocumentOperation:
         try:
             # Currently only markdown to latex is supported
             if source_format == "markdown" and target_format == "latex":
-                result = self.texflow.markdown_to_latex(
-                    source,
-                    output_path,
-                    title=params.get("title", "Document"),
-                    standalone=params.get("standalone", True)
-                )
+                import subprocess
                 
-                # Extract output path from result
-                output_file = self._extract_path_from_result(result)
+                source_path = texflow.resolve_path(source)
+                if not source_path.exists():
+                    return {"error": f"Source file not found: {source_path}"}
                 
-                return {
-                    "success": True,
-                    "source": source,
-                    "source_format": source_format,
-                    "target_format": target_format,
-                    "output": output_file,
-                    "message": f"Converted to {target_format}: {output_file}"
-                }
+                # Generate output path if not provided
+                if not output_path:
+                    output_file = source_path.with_suffix(".tex")
+                else:
+                    output_file = texflow.resolve_path(output_path)
+                
+                # Convert using pandoc
+                try:
+                    subprocess.run(
+                        ["pandoc", "-f", "markdown", "-t", "latex", "-o", str(output_file), str(source_path)], 
+                        check=True
+                    )
+                    
+                    return {
+                        "success": True,
+                        "source": str(source_path),
+                        "source_format": source_format,
+                        "target_format": target_format,
+                        "output": str(output_file),
+                        "message": f"Converted to {target_format}: {output_file}"
+                    }
+                except subprocess.CalledProcessError as e:
+                    return {"error": f"Conversion failed: {e}"}
+                except FileNotFoundError:
+                    return {"error": "pandoc not found - install pandoc for format conversion"}
             else:
                 return {
                     "error": f"Conversion from {source_format} to {target_format} not supported",
@@ -301,12 +337,14 @@ class DocumentOperation:
         
         try:
             # Determine if it's a path or content
-            if Path(content_or_path).exists():
+            potential_path = texflow.resolve_path(content_or_path) if content_or_path else None
+            
+            if potential_path and potential_path.exists():
                 # It's a path - read the content
-                content = self.texflow.read_document(content_or_path)
+                content = potential_path.read_text()
                 if not format_type:
-                    format_type = self._detect_format_from_path(content_or_path)
-                source = content_or_path
+                    format_type = self._detect_format_from_path(str(potential_path))
+                source = str(potential_path)
             else:
                 # It's content
                 content = content_or_path
@@ -316,17 +354,14 @@ class DocumentOperation:
             
             # Currently only LaTeX validation is supported
             if format_type == "latex":
-                result = self.texflow.validate_latex(content)
-                
-                # Parse validation result
-                is_valid = "valid" in result.lower() or "success" in result.lower()
+                validation_result = self._validate_latex_content(content)
                 
                 return {
                     "success": True,
-                    "valid": is_valid,
+                    "valid": validation_result.get("valid", False),
                     "format": format_type,
                     "source": source,
-                    "validation_report": result
+                    "validation_report": validation_result.get("message", "Unknown validation result")
                 }
             else:
                 return {
@@ -347,17 +382,28 @@ class DocumentOperation:
             return {"error": "Path parameter is required"}
         
         try:
-            result = self.texflow.check_document_status(path)
+            # Use resolve_path to get the correct path considering project context
+            file_path = texflow.resolve_path(path)
             
-            # Parse result to extract status info
-            has_changes = "modified" in result.lower() or "changed" in result.lower()
+            if not file_path.exists():
+                return {"error": f"File not found: {file_path}"}
+            
+            # Get file status information
+            from datetime import datetime
+            stat = file_path.stat()
+            modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            size = stat.st_size
+            
+            status_report = f"File: {file_path}\nModified: {modified}\nSize: {size} bytes"
             
             return {
                 "success": True,
-                "path": path,
-                "has_external_changes": has_changes,
-                "status_report": result,
-                "format": self._detect_format_from_path(path)
+                "path": str(file_path),
+                "has_external_changes": False,  # We can't easily detect this without more complex tracking
+                "status_report": status_report,
+                "format": self._detect_format_from_path(str(file_path)),
+                "modified": modified,
+                "size": size
             }
             
         except Exception as e:
@@ -458,3 +504,58 @@ class DocumentOperation:
             return result.strip()
         
         return "unknown"
+    
+    def _validate_latex_content(self, content: str) -> Dict[str, Any]:
+        """Validate LaTeX content and return structured result."""
+        import subprocess
+        import tempfile
+        
+        try:
+            # Create a temporary file for validation
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as temp_file:
+                temp_file.write(content)
+                temp_path = Path(temp_file.name)
+            
+            try:
+                # Try test compilation
+                result = subprocess.run(
+                    ["xelatex", "-interaction=nonstopmode", "-halt-on-error", str(temp_path)],
+                    cwd=temp_path.parent,
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    return {
+                        "valid": True,
+                        "message": "LaTeX validation passed"
+                    }
+                else:
+                    # Extract error from output
+                    error_lines = []
+                    for line in result.stdout.split('\n'):
+                        if line.startswith('!'):
+                            error_lines.append(line)
+                    
+                    error_msg = "\n".join(error_lines[:3]) if error_lines else "Compilation failed"
+                    return {
+                        "valid": False,
+                        "message": f"LaTeX validation failed: {error_msg}"
+                    }
+            finally:
+                # Clean up temporary files
+                temp_path.unlink(missing_ok=True)
+                # Also try to clean up generated files
+                for ext in ['.aux', '.log', '.pdf']:
+                    temp_path.with_suffix(ext).unlink(missing_ok=True)
+                    
+        except FileNotFoundError:
+            return {
+                "valid": False,
+                "message": "XeLaTeX not found - cannot validate compilation"
+            }
+        except Exception as e:
+            return {
+                "valid": False,
+                "message": f"Validation error: {str(e)}"
+            }
