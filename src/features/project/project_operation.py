@@ -5,6 +5,12 @@ Manages document projects with intelligent organization.
 """
 
 from typing import Dict, Any, List, Optional
+import sys
+from pathlib import Path
+
+# Import the texflow module to access the actual project functions
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+import texflow
 
 
 class ProjectOperation:
@@ -145,13 +151,23 @@ class ProjectOperation:
             return {"error": "Project name is required"}
         
         try:
-            result = self.texflow.project("switch", name)
+            # Call the actual texflow project function
+            result = texflow.project("switch", name)
+            
+            # Check if it was successful (texflow functions return strings)
+            if "❌" in result or "Error" in result:
+                return {
+                    "success": False,
+                    "error": result,
+                    "project_name": name,
+                    "hint": "Use project(action='list') to see available projects"
+                }
             
             return {
                 "success": True,
                 "action": "switch",
                 "project_name": name,
-                "message": f"Switched to project: {name}",
+                "message": result,
                 "hint": "All document operations will now use this project"
             }
             
@@ -168,7 +184,8 @@ class ProjectOperation:
         sort_by = params.get("sort_by", "modified")  # name, created, modified
         
         try:
-            result = self.texflow.project("list")
+            # Call the actual texflow project function
+            result = texflow.project("list")
             
             # Parse the result to extract project list
             projects = self._parse_project_list(result)
@@ -212,7 +229,8 @@ class ProjectOperation:
         detailed = params.get("detailed", False)
         
         try:
-            result = self.texflow.project("info")
+            # Call the actual texflow project function
+            result = texflow.project("info")
             
             # Check if no project is active
             if "no project" in result.lower() or "not in a project" in result.lower():
