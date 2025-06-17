@@ -182,14 +182,14 @@ class DocumentOperation:
             filename = self._generate_filename(content, format_type)
         
         # Ensure correct extension
-        if not filename.endswith(f".{format_type[:3]}"):
-            filename = f"{filename}.{format_type[:3]}"
+        ext = ".tex" if format_type == "latex" else ".md"
+        if not filename.endswith(ext):
+            # Remove any existing extension and add the correct one
+            base_name = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            filename = f"{base_name}{ext}"
         
         # Use resolve_path to determine the correct location
         try:
-            # Determine file extension
-            ext = ".tex" if format_type == "latex" else ".md"
-            
             # Create file path using intelligent resolution
             file_path = texflow.resolve_path(filename, "document", ext)
             
