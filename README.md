@@ -669,6 +669,10 @@ This ensures users aren't repeatedly asked about printer selection and files are
 
 ## Claude Desktop Configuration
 
+### Important: Workspace Path
+
+TeXFlow requires a workspace path where all your document projects will be stored. This is passed as the last argument to the `texflow` command.
+
 ### Method 1: Run from GitHub (Recommended)
 
 Add to your Claude Desktop config:
@@ -678,7 +682,7 @@ Add to your Claude Desktop config:
   "mcpServers": {
     "texflow": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/aaronsb/texflow-mcp.git", "texflow"]
+      "args": ["--from", "git+https://github.com/aaronsb/texflow-mcp.git", "texflow", "/path/to/your/documents"]
     }
   }
 }
@@ -687,7 +691,11 @@ Add to your Claude Desktop config:
 Or use the Claude CLI:
 
 ```bash
-claude mcp add texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow
+# Add with user scope (recommended)
+claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow /path/to/your/documents
+
+# Example with specific workspace
+claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow ~/Documents/TeXFlow
 ```
 
 ### Method 2: Run from local directory
@@ -699,11 +707,26 @@ If you've cloned the repository:
   "mcpServers": {
     "texflow": {
       "command": "uv",
-      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow"]
+      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow", "/path/to/your/documents"]
     }
   }
 }
 ```
+
+Or with Claude CLI:
+
+```bash
+# Add with user scope
+claude mcp add --scope user texflow uv -- --directory /path/to/texflow-mcp run texflow /path/to/your/documents
+```
+
+### Workspace Path Options
+
+1. **Command line argument**: `/path/to/your/documents` as shown above
+2. **Environment variable**: Set `TEXFLOW_WORKSPACE=/path/to/your/documents`
+3. **Default**: If neither is provided, defaults to `~/Documents/TeXFlow`
+
+All TeXFlow projects and documents will be created within this workspace directory.
 
 ## AI-to-AI Collaboration 🤖🤝🤖
 
