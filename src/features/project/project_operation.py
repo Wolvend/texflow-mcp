@@ -119,8 +119,8 @@ class ProjectOperation:
             return {"error": "Project name is required"}
         
         try:
-            # Use the original create_project function
-            result = self.texflow.project("create", name, description or template)
+            # Call the texflow project function directly
+            result = texflow.project("create", name, description or template)
             
             # Parse result to extract project info
             project_path = self._extract_project_path(result)
@@ -271,7 +271,7 @@ class ProjectOperation:
     def _close_project(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Close the current project."""
         try:
-            result = self.texflow.project("close")
+            result = texflow.project("close")
             
             # Check if no project was active
             if "no project is currently active" in result.lower():

@@ -90,8 +90,16 @@ class SemanticRouter:
     
     def _preprocess_params(self, operation: str, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Pre-process parameters based on operation type."""
-        # Auto-detect format for document operations
+        # Enforce project-first workflow for document creation
         if operation == "document" and action == "create":
+            if not self.current_context.get("project"):
+                # Refuse to create documents outside of projects
+                raise ValueError("No active project. Please create or switch to a project first.\n"
+                               "→ List projects: project(action='list')\n"
+                               "→ Create project: project(action='create', name='...')\n"
+                               "→ Switch project: project(action='switch', name='...')")
+            
+            # Auto-detect format
             if "format" not in params or params["format"] == "auto":
                 params["format"] = self._detect_format(params.get("content", ""))
         
