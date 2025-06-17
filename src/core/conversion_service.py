@@ -114,7 +114,19 @@ class ConversionService:
             }
     
     def latex_to_pdf(self, source_path: Path, output_path: Path) -> Dict[str, Any]:
-        """Convert LaTeX to PDF using XeLaTeX (preferred) or PDFLaTeX."""
+        """
+        Convert LaTeX to PDF using XeLaTeX (preferred) or PDFLaTeX.
+        
+        Runs multiple compilation passes to ensure:
+        - Table of contents (TOC) is properly generated
+        - Cross-references are resolved
+        - Page numbers are correct (e.g., "Page X of Y")
+        
+        LaTeX needs multiple passes because:
+        1. First pass: Collects section info and writes .aux files
+        2. Second pass: Uses .aux files to build TOC and references
+        3. Third pass: Finalizes any remaining references
+        """
         # Choose engine
         if self.xelatex_available:
             engine = "xelatex"
@@ -136,26 +148,40 @@ class ConversionService:
                 temp_source = temp_path / source_path.name
                 shutil.copy2(source_path, temp_source)
                 
-                # Run LaTeX engine
-                result = subprocess.run([
-                    engine,
-                    "-interaction=nonstopmode",
-                    "-output-directory", str(temp_path),
-                    str(temp_source)
-                ], 
-                capture_output=True,
-                text=True,
-                cwd=temp_path)
+                # Copy any assets from the source directory (images, included files, etc.)
+                # This ensures LaTeX can find all referenced files
+                source_dir = source_path.parent
+                for file in source_dir.iterdir():
+                    if file.is_file() and file != source_path:
+                        # Copy supporting files (images, .bib, .sty, etc.)
+                        if file.suffix in ['.png', '.jpg', '.jpeg', '.pdf', '.eps', '.bib', '.sty', '.cls']:
+                            shutil.copy2(file, temp_path / file.name)
                 
-                if result.returncode != 0:
-                    # Extract meaningful errors from output
-                    errors = self._extract_latex_errors(result.stdout + result.stderr)
-                    return {
-                        "success": False,
-                        "error": f"LaTeX compilation failed with {engine}",
-                        "latex_errors": errors,
-                        "return_code": result.returncode
-                    }
+                # Run LaTeX engine multiple times for TOC and cross-references
+                # First pass: collect section information
+                # Second pass: build TOC using collected info
+                # Third pass: resolve any remaining references
+                for pass_num in range(1, 4):
+                    result = subprocess.run([
+                        engine,
+                        "-interaction=nonstopmode",
+                        "-output-directory", str(temp_path),
+                        str(temp_source)
+                    ], 
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_path)
+                    
+                    if result.returncode != 0:
+                        # Extract meaningful errors from output
+                        errors = self._extract_latex_errors(result.stdout + result.stderr)
+                        return {
+                            "success": False,
+                            "error": f"LaTeX compilation failed with {engine} (pass {pass_num})",
+                            "latex_errors": errors,
+                            "return_code": result.returncode,
+                            "pass_failed": pass_num
+                        }
                 
                 # Find generated PDF
                 temp_pdf = temp_source.with_suffix('.pdf')
