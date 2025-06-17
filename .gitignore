@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Content created during testing
+content/
+*.mar
+test_*.md
+test_*.tex
