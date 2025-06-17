@@ -179,9 +179,22 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
     if path_str:
         path = Path(path_str)
         
-        # Absolute path - use as is
+        # Handle absolute paths
         if path.is_absolute():
-            return path.expanduser()
+            # When in a project, restrict absolute paths to workspace
+            if use_project and SESSION_CONTEXT["current_project"]:
+                # Extract just the filename from absolute path
+                filename = path.name
+                project_base = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
+                return project_base / "content" / filename
+            else:
+                # Outside project, allow absolute paths within workspace only
+                abs_path = path.expanduser()
+                if TEXFLOW_ROOT in abs_path.parents or abs_path == TEXFLOW_ROOT:
+                    return abs_path
+                else:
+                    # Path outside workspace - use filename only in workspace root
+                    return SESSION_CONTEXT["workspace_root"] / path.name
             
         # Relative path with project context
         if use_project and SESSION_CONTEXT["current_project"]:
@@ -201,7 +214,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
         # No path given - generate default
         if use_project and SESSION_CONTEXT["current_project"]:
             # current_project now contains the full relative path from TeXFlow root
-            project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
+            project_base = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
             return project_base / "content" / f"{default_name}{extension}"
         else:
             # Use workspace root
