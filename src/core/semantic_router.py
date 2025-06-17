@@ -348,15 +348,27 @@ class SemanticRouter:
         
         if "not found" in error_lower:
             if operation == "document":
-                return "Check the file path or use 'discover' operation to list available documents"
+                # Check if we're in a project context via texflow's SESSION_CONTEXT
+                import texflow
+                if texflow.SESSION_CONTEXT.get("current_project"):
+                    return "File not found in current project. Use 'discover(action=\"documents\")' to list available files"
+                else:
+                    return "File not found. Are you working in a project? Use 'project(action=\"switch\")' to activate a project, or 'project(action=\"create\")' to create one"
             elif operation == "project":
                 return "Use 'project(action=\"list\")' to see available projects"
+            elif operation == "output":
+                return "Source file not found. Use 'discover(action=\"documents\")' to list available documents"
         
         elif "permission" in error_lower:
             return "Check file permissions or try running with appropriate privileges"
         
         elif "format" in error_lower:
+            if "cannot export from format" in error_lower:
+                return "The 'format' parameter specifies the SOURCE format (not target). For .tex files, use format='latex' or omit for auto-detection"
             return "Use 'workflow(action=\"suggest\")' to get format recommendations"
+        
+        elif "validation" in error_lower or "compile" in error_lower:
+            return "LaTeX compilation failed. Use 'document(action=\"validate\")' to check for syntax errors"
         
         return "Use 'workflow(action=\"guide\")' for help with this operation"
     
