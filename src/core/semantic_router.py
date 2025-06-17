@@ -170,6 +170,22 @@ class SemanticRouter:
         
         # Check for format escalation hints
         if operation == "document" and "format" in result:
+            # Add LaTeX-specific workflow hints
+            if result["format"] == "latex" and action in ["create", "edit"]:
+                result["workflow"] = {
+                    "message": "LaTeX document saved successfully",
+                    "suggested_next": [
+                        {
+                            "description": "Validate LaTeX syntax before compiling",
+                            "command": f"document(action='validate', path='{result.get('path', 'document.tex')}')"
+                        },
+                        {
+                            "description": "Export to PDF (don't use format='pdf')",
+                            "command": f"output(action='export', source='{result.get('path', 'document.tex')}', output_path='output/document.pdf')",
+                            "note": "The 'format' parameter is for source format only. Output format is determined by file extension."
+                        }
+                    ]
+                }
             if result["format"] == "markdown":
                 # Check if content might benefit from LaTeX
                 triggers = self._check_format_triggers(result.get("content", ""))

@@ -373,7 +373,7 @@ def document(
             # Convert Markdown to LaTeX using pandoc
             output_path = source_path.with_suffix(".tex")
             try:
-                subprocess.run(["pandoc", "-f", "markdown", "-t", "latex", "-o", str(output_path), str(source_path)], check=True)
+                subprocess.run(["pandoc", "-f", "markdown", "-t", "latex", "-s", "-o", str(output_path), str(source_path)], check=True)
                 return f"✓ Converted to LaTeX: {output_path}\n💡 Next: document(action='edit', path='{output_path}')"
             except subprocess.CalledProcessError as e:
                 return f"❌ Error converting document: {e}"

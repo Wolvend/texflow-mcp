@@ -1,0 +1,259 @@
+"""
+Centralized document conversion service.
+Single implementation for all format conversions to eliminate duplication.
+"""
+
+import subprocess
+import shutil
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple
+import tempfile
+
+
+class ConversionService:
+    """Handles all document format conversions."""
+    
+    def __init__(self):
+        """Initialize and check available tools."""
+        self.pandoc_available = self._check_command("pandoc")
+        self.xelatex_available = self._check_command("xelatex")
+        self.pdflatex_available = self._check_command("pdflatex")
+    
+    def _check_command(self, command: str) -> bool:
+        """Check if a command is available in the system."""
+        try:
+            subprocess.run([command, "--version"], 
+                         capture_output=True, 
+                         check=True,
+                         timeout=5)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    def convert(self, source: Path, target_format: str, output_path: Optional[Path] = None) -> Dict[str, Any]:
+        """
+        Main conversion dispatcher.
+        
+        Args:
+            source: Source file path
+            target_format: Target format (latex, pdf, html, docx, etc.)
+            output_path: Optional output path, auto-generated if not provided
+            
+        Returns:
+            Dict with success status, output path, and any errors
+        """
+        source_format = source.suffix.lstrip('.')
+        
+        # Validate source exists
+        if not source.exists():
+            return {"success": False, "error": f"Source file not found: {source}"}
+        
+        # Auto-generate output path if not provided
+        if output_path is None:
+            output_path = source.with_suffix(f'.{target_format}')
+        
+        # Route to appropriate converter
+        converters = {
+            ('md', 'latex'): self.markdown_to_latex,
+            ('md', 'pdf'): self.markdown_to_pdf,
+            ('markdown', 'latex'): self.markdown_to_latex,
+            ('markdown', 'pdf'): self.markdown_to_pdf,
+            ('tex', 'pdf'): self.latex_to_pdf,
+            ('latex', 'pdf'): self.latex_to_pdf,
+        }
+        
+        converter_key = (source_format, target_format)
+        if converter_key in converters:
+            return converters[converter_key](source, output_path)
+        else:
+            return {
+                "success": False,
+                "error": f"Conversion from {source_format} to {target_format} not supported",
+                "supported_conversions": list(converters.keys())
+            }
+    
+    def markdown_to_latex(self, source_path: Path, output_path: Path) -> Dict[str, Any]:
+        """Convert markdown to LaTeX using pandoc."""
+        if not self.pandoc_available:
+            return {
+                "success": False,
+                "error": "pandoc not found - install pandoc for format conversion",
+                "install_hint": "Install with: sudo apt install pandoc (Linux) or brew install pandoc (Mac)"
+            }
+        
+        try:
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Run pandoc with standalone flag for complete document
+            subprocess.run([
+                "pandoc",
+                "-f", "markdown",
+                "-t", "latex",
+                "-s",  # Standalone document with proper headers
+                "-o", str(output_path),
+                str(source_path)
+            ], check=True, capture_output=True, text=True)
+            
+            return {
+                "success": True,
+                "source": str(source_path),
+                "output": str(output_path),
+                "source_format": "markdown",
+                "target_format": "latex",
+                "message": f"Successfully converted to LaTeX: {output_path}"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                "success": False,
+                "error": f"Pandoc conversion failed: {e}",
+                "stderr": e.stderr if hasattr(e, 'stderr') else None
+            }
+    
+    def latex_to_pdf(self, source_path: Path, output_path: Path) -> Dict[str, Any]:
+        """Convert LaTeX to PDF using XeLaTeX (preferred) or PDFLaTeX."""
+        # Choose engine
+        if self.xelatex_available:
+            engine = "xelatex"
+        elif self.pdflatex_available:
+            engine = "pdflatex"
+        else:
+            return {
+                "success": False,
+                "error": "No LaTeX engine found (XeLaTeX or PDFLaTeX required)",
+                "install_hint": "Install TeX Live: sudo apt install texlive-xetex (Linux) or brew install --cask mactex (Mac)"
+            }
+        
+        try:
+            # Create a temporary directory for auxiliary files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                
+                # Copy source file to temp directory
+                temp_source = temp_path / source_path.name
+                shutil.copy2(source_path, temp_source)
+                
+                # Run LaTeX engine
+                result = subprocess.run([
+                    engine,
+                    "-interaction=nonstopmode",
+                    "-output-directory", str(temp_path),
+                    str(temp_source)
+                ], 
+                capture_output=True,
+                text=True,
+                cwd=temp_path)
+                
+                if result.returncode != 0:
+                    # Extract meaningful errors from output
+                    errors = self._extract_latex_errors(result.stdout + result.stderr)
+                    return {
+                        "success": False,
+                        "error": f"LaTeX compilation failed with {engine}",
+                        "latex_errors": errors,
+                        "return_code": result.returncode
+                    }
+                
+                # Find generated PDF
+                temp_pdf = temp_source.with_suffix('.pdf')
+                if not temp_pdf.exists():
+                    return {
+                        "success": False,
+                        "error": "PDF generation failed - no output file created"
+                    }
+                
+                # Move to final location
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(temp_pdf), str(output_path))
+                
+                return {
+                    "success": True,
+                    "source": str(source_path),
+                    "output": str(output_path),
+                    "source_format": "latex",
+                    "target_format": "pdf",
+                    "engine": engine,
+                    "message": f"Successfully created PDF: {output_path}"
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error during PDF generation: {str(e)}"
+            }
+    
+    def markdown_to_pdf(self, source_path: Path, output_path: Path) -> Dict[str, Any]:
+        """Convert markdown directly to PDF using pandoc."""
+        if not self.pandoc_available:
+            return {
+                "success": False,
+                "error": "pandoc not found - install pandoc for format conversion"
+            }
+        
+        # Determine PDF engine
+        pdf_engine = "xelatex" if self.xelatex_available else "pdflatex" if self.pdflatex_available else None
+        
+        if not pdf_engine:
+            return {
+                "success": False,
+                "error": "No LaTeX engine found for PDF generation",
+                "install_hint": "Install TeX Live for PDF support"
+            }
+        
+        try:
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            subprocess.run([
+                "pandoc",
+                str(source_path),
+                "-o", str(output_path),
+                f"--pdf-engine={pdf_engine}"
+            ], check=True, capture_output=True, text=True)
+            
+            return {
+                "success": True,
+                "source": str(source_path),
+                "output": str(output_path),
+                "source_format": "markdown",
+                "target_format": "pdf",
+                "engine": f"pandoc with {pdf_engine}",
+                "message": f"Successfully created PDF: {output_path}"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                "success": False,
+                "error": f"PDF generation failed: {e}",
+                "stderr": e.stderr if hasattr(e, 'stderr') else None
+            }
+    
+    def _extract_latex_errors(self, output: str) -> list:
+        """Extract meaningful error messages from LaTeX output."""
+        errors = []
+        lines = output.split('\n')
+        
+        for i, line in enumerate(lines):
+            # LaTeX errors start with !
+            if line.startswith('!'):
+                errors.append(line)
+                # Try to get the next few lines for context
+                for j in range(1, 4):
+                    if i + j < len(lines):
+                        errors.append(lines[i + j])
+                errors.append('---')
+        
+        # Limit to first 5 errors
+        return errors[:20] if errors else ["No specific errors found in output"]
+
+
+# Singleton instance for reuse
+_conversion_service = None
+
+def get_conversion_service() -> ConversionService:
+    """Get or create the conversion service singleton."""
+    global _conversion_service
+    if _conversion_service is None:
+        _conversion_service = ConversionService()
+    return _conversion_service

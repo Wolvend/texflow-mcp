@@ -261,6 +261,71 @@ class FormatDetector:
         else:
             return "low"
     
+    def detect_from_path(self, path: str) -> str:
+        """Detect format from file path/extension."""
+        path_lower = str(path).lower()
+        
+        # Extension mapping
+        ext_map = {
+            '.tex': 'latex',
+            '.latex': 'latex',
+            '.ltx': 'latex',
+            '.md': 'markdown', 
+            '.markdown': 'markdown',
+            '.mdown': 'markdown',
+            '.mkd': 'markdown',
+            '.mdwn': 'markdown',
+            '.mkdown': 'markdown',
+            '.txt': 'text',
+            '.rst': 'restructuredtext',
+            '.pdf': 'pdf',
+            '.docx': 'docx',
+            '.doc': 'doc',
+            '.odt': 'odt',
+            '.html': 'html',
+            '.htm': 'html',
+            '.epub': 'epub',
+            '.rtf': 'rtf'
+        }
+        
+        import os
+        _, ext = os.path.splitext(path_lower)
+        return ext_map.get(ext, 'unknown')
+    
+    def detect_from_content(self, content: str) -> str:
+        """Quick format detection from content only (no scoring)."""
+        # Check for strong LaTeX indicators first
+        latex_patterns = [
+            r'\\documentclass',
+            r'\\begin\{document\}', 
+            r'\\usepackage',
+            r'\\section\{',
+            r'\\chapter\{'
+        ]
+        
+        for pattern in latex_patterns:
+            if re.search(pattern, content):
+                return 'latex'
+        
+        # Check for markdown patterns
+        markdown_patterns = [
+            r'^#{1,6}\s',      # Headers
+            r'^\*{1,2}[^*]+\*{1,2}',  # Bold/italic
+            r'^\s*[-*+]\s',    # Unordered lists
+            r'^\s*\d+\.\s',    # Ordered lists
+            r'\[.*\]\(.*\)',   # Links
+            r'```'             # Code blocks
+        ]
+        
+        markdown_score = sum(1 for pattern in markdown_patterns 
+                           if re.search(pattern, content, re.MULTILINE))
+        
+        if markdown_score >= 2:
+            return 'markdown'
+        
+        # Default to text for plain content
+        return 'text'
+    
     def suggest_escalation(self, current_format: str, triggers: List[str]) -> Dict[str, Any]:
         """Suggest format escalation based on triggers."""
         if not triggers or current_format == "latex":
@@ -284,3 +349,14 @@ class FormatDetector:
             "benefits": benefits,
             "message": f"Your document uses {', '.join(triggers)} which would benefit from LaTeX"
         }
+
+
+# Singleton instance
+_format_detector = None
+
+def get_format_detector() -> FormatDetector:
+    """Get or create the format detector singleton."""
+    global _format_detector
+    if _format_detector is None:
+        _format_detector = FormatDetector()
+    return _format_detector

@@ -223,9 +223,11 @@ class OutputOperation:
                     return {"message": result_str, "path": output_path}
             else:
                 return {
-                    "error": f"Cannot export from format '{format_hint}' to PDF. Auto-detected format may be unsupported.",
-                    "supported_formats": ["markdown", "latex"],
-                    "hint": "Try specifying format='markdown' or format='latex' explicitly"
+                    "error": f"Invalid source format '{format_hint}'. The 'format' parameter specifies the source document format, not the target.",
+                    "detected_format": format_hint,
+                    "supported_source_formats": ["markdown", "latex"],
+                    "hint": "The 'format' parameter specifies the SOURCE format (latex/markdown), not the target. For .tex files, use format='latex' or omit for auto-detection.",
+                    "note": "Output format is determined by the file extension in output_path (e.g., .pdf, .docx, .html)"
                 }
             
             return {

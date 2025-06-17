@@ -200,6 +200,10 @@ def document(
     if action == "create" and path is not None:
         params["filename"] = params.pop("path", None)
     
+    # Document operation expects 'content_or_path' for validate action
+    if action == "validate" and path is not None:
+        params["content_or_path"] = params.pop("path", None)
+    
     result = semantic.execute("document", action, params)
     return format_semantic_result(result)
 
