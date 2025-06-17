@@ -50,7 +50,9 @@ class ConversionService:
         
         # Auto-generate output path if not provided
         if output_path is None:
-            output_path = source.with_suffix(f'.{target_format}')
+            # Use .tex for latex format, not .latex
+            extension = '.tex' if target_format == 'latex' else f'.{target_format}'
+            output_path = source.with_suffix(extension)
         
         # Route to appropriate converter
         converters = {
