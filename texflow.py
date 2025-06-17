@@ -947,6 +947,14 @@ def discover(
         except:
             caps.append("✗ Fontconfig not found")
             
+        # Check for PDF rendering dependencies
+        try:
+            import pdf2image
+            from PIL import Image
+            caps.append("✓ PDF rendering (pdf2image + Pillow)")
+        except ImportError:
+            caps.append("✗ PDF rendering not available (missing pdf2image or Pillow)")
+            
         return "System Capabilities:\n" + "\n".join(caps)
         
     else:

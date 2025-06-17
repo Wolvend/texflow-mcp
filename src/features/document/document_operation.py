@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 import sys
 import difflib
+import base64
+import io
 
 # Import the resolve_path function and session context from the main texflow module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -42,6 +44,7 @@ class DocumentOperation:
             - convert: Convert between formats
             - validate: Validate document syntax
             - status: Check document modification status
+            - inspect: Render PDF page to base64 PNG image for visual review
         """
         action_map = {
             "create": self._create_document,
@@ -51,7 +54,8 @@ class DocumentOperation:
             "insert_at_line": self._insert_at_line,
             "convert": self._convert_document,
             "validate": self._validate_document,
-            "status": self._check_status
+            "status": self._check_status,
+            "inspect": self._inspect_pdf_page
         }
         
         if action not in action_map:
@@ -859,3 +863,87 @@ class DocumentOperation:
             
         except Exception as e:
             return {"error": str(e), "path": path}
+    
+    def _inspect_pdf_page(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Inspect a PDF page by rendering to base64 PNG image for visual review.
+        
+        Args:
+            path: Path to PDF file
+            page: Page number to render (1-indexed)
+            dpi: DPI for rendering (default: 120)
+            
+        Returns:
+            Dict with base64 PNG image data or error
+        """
+        path = params.get("path", "")
+        page = params.get("page", 1)
+        dpi = params.get("dpi", 120)
+        
+        if not path:
+            return {"error": "PDF path is required"}
+        
+        try:
+            # Resolve path using texflow's project-aware resolution
+            pdf_path = texflow.resolve_path(path)
+            
+            if not pdf_path.exists():
+                return {"error": f"PDF file not found: {pdf_path}"}
+            
+            if not str(pdf_path).lower().endswith('.pdf'):
+                return {"error": f"File is not a PDF: {pdf_path}"}
+            
+            # Check if pdf2image is available
+            try:
+                from pdf2image import convert_from_path
+                from PIL import Image
+            except ImportError:
+                return {
+                    "error": "PDF rendering requires pdf2image and Pillow libraries",
+                    "system_check": "Install with: pip install pdf2image pillow",
+                    "dependencies": ["pdf2image", "pillow", "poppler-utils"]
+                }
+            
+            # Convert specified page to image
+            try:
+                images = convert_from_path(
+                    str(pdf_path),
+                    dpi=dpi,
+                    first_page=page,
+                    last_page=page
+                )
+                
+                if not images:
+                    return {"error": f"Could not render page {page} from PDF"}
+                
+                # Convert PIL Image to base64 PNG
+                image = images[0]
+                buffer = io.BytesIO()
+                image.save(buffer, format='PNG')
+                buffer.seek(0)
+                
+                base64_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                
+                return {
+                    "success": True,
+                    "action": "inspect",
+                    "pdf_path": str(pdf_path),
+                    "page": page,
+                    "dpi": dpi,
+                    "image": {
+                        "mimeType": "image/png",
+                        "base64": base64_data,
+                        "width": image.width,
+                        "height": image.height
+                    },
+                    "message": f"Rendered page {page} of {pdf_path.name} at {dpi} DPI"
+                }
+                
+            except Exception as e:
+                return {
+                    "error": f"Failed to render PDF page: {str(e)}",
+                    "hint": "Ensure PDF is valid and page number exists"
+                }
+                
+        except Exception as e:
+            return {"error": f"PDF rendering error: {str(e)}"}

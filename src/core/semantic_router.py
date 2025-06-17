@@ -200,6 +200,27 @@ class SemanticRouter:
                     "command": "document(action='convert', source='file.md', target_format='latex')"
                 }
         
+        # Hint to inspect after PDF export
+        if operation == "output" and action == "export" and result.get("success"):
+            if result.get("path") and str(result["path"]).endswith('.pdf'):
+                result["workflow"] = {
+                    "message": "PDF created successfully",
+                    "suggested_next": [
+                        {"description": "Preview the rendered output", "command": "document(action='inspect', path='filename.pdf', page=1)"},
+                        {"description": "Send to printer", "command": "output(action='print', source='filename.pdf')"}
+                    ]
+                }
+        
+        # Hint after successful PDF inspection
+        if operation == "document" and action == "inspect" and result.get("success"):
+            result["workflow"] = {
+                "message": "PDF page inspection complete",
+                "suggested_next": [
+                    {"description": "Print this document", "command": "output(action='print', source='filename.pdf')"},
+                    {"description": "View next page", "command": "document(action='inspect', path='filename.pdf', page=2)"}
+                ]
+            }
+        
         # Add warning for documents created outside projects
         if operation == "document" and action == "create" and params.get("_outside_project"):
             if result.get("path"):

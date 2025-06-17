@@ -115,6 +115,15 @@ def format_semantic_result(result: Dict[str, Any]) -> str:
     if result.get("hint"):
         output += f"\n💡 {result['hint']}"
     
+    # Handle image data for inspect operations
+    if result.get("image"):
+        image_data = result["image"]
+        output += f"\n\n🔍 PDF Page Inspection:"
+        output += f"\n   Type: {image_data.get('mimeType', 'image/png')}"
+        output += f"\n   Dimensions: {image_data.get('width', 'unknown')}x{image_data.get('height', 'unknown')}"
+        # Note: The base64 data is available in the result but not displayed in text output
+        # The AI model will access it directly from the image field
+    
     return output
 
 
@@ -128,7 +137,9 @@ def document(
     source: Optional[str] = None,
     target_format: Optional[str] = None,
     old_string: Optional[str] = None,
-    new_string: Optional[str] = None
+    new_string: Optional[str] = None,
+    page: Optional[int] = None,
+    dpi: Optional[int] = None
 ) -> str:
     """Manage document lifecycle - create, read, edit, convert, validate, and track changes.
     
@@ -145,6 +156,7 @@ def document(
     - convert: Transform between formats (e.g., markdown→latex)
     - validate: Check syntax and structure
     - status: Check for external modifications
+    - inspect: Inspect PDF page by rendering to base64 PNG image
     """
     params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
     
