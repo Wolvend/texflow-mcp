@@ -205,21 +205,36 @@ class SemanticRouter:
             if result.get("path"):
                 # Extract directory from path
                 import os
-                doc_dir = os.path.dirname(result["path"])
+                from pathlib import Path
+                doc_path = Path(result["path"])
+                doc_dir = doc_path.parent
+                
+                # Get relative path from workspace root for cleaner display
+                workspace_root = Path(os.environ.get("TEXFLOW_WORKSPACE", Path.home() / "Documents" / "TeXFlow"))
+                try:
+                    relative_dir = doc_dir.relative_to(workspace_root)
+                    dir_name = str(relative_dir) if str(relative_dir) != "." else workspace_root.name
+                except ValueError:
+                    # Path is outside workspace
+                    dir_name = doc_dir.name
+                
+                # Suggest a project name based on the directory
+                suggested_name = dir_name.replace("/", "-").replace(" ", "-").lower()
+                
                 result["project_hint"] = {
-                    "message": "⚠️  Document created outside a project",
-                    "important": "To work effectively with this document, import its directory as a project",
+                    "message": f"⚠️  Document created in {doc_dir}",
+                    "important": "To organize this document, import its directory as a project",
                     "next_steps": [
                         {
                             "operation": "project",
                             "action": "import", 
-                            "description": "Import this directory as a TeXFlow project",
-                            "command": f"project(action='import', name='my-project')"
+                            "description": f"Import '{dir_name}' as a TeXFlow project",
+                            "command": f"project(action='import', name='{suggested_name}')"
                         },
                         {
                             "operation": "project",
                             "action": "create",
-                            "description": "Or create a new project",
+                            "description": "Or create a new project in a different location",
                             "command": "project(action='create', name='my-project')"
                         }
                     ]
