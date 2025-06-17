@@ -7,6 +7,14 @@ Bundles all output-related tools (printing, PDF export) into a unified interface
 from typing import Dict, Any, Optional
 from pathlib import Path
 import re
+import sys
+
+# Add path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+
+# Import core services
+from ...core.conversion_service import get_conversion_service
+from ...core.format_detector import get_format_detector
 
 
 class OutputOperation:
@@ -21,6 +29,9 @@ class OutputOperation:
         """
         self.texflow = texflow_instance
         self._printer_memory = {}  # Remember printer choices per session
+        # Initialize core services
+        self.conversion_service = get_conversion_service()
+        self.format_detector = get_format_detector()
         
     def execute(self, action: str, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -266,40 +277,12 @@ class OutputOperation:
         return None
     
     def _detect_content_format(self, content: str) -> str:
-        """Detect format from content."""
-        # Check for LaTeX
-        latex_patterns = [r'\\documentclass', r'\\begin{', r'\\usepackage', r'\\section{']
-        if any(re.search(pattern, content) for pattern in latex_patterns):
-            return "latex"
-        
-        # Check for Markdown
-        markdown_patterns = [r'^#+\s', r'^\*\s', r'^\d+\.\s', r'\[.*\]\(.*\)', r'```']
-        if any(re.search(pattern, content, re.MULTILINE) for pattern in markdown_patterns):
-            return "markdown"
-        
-        # Default to text
-        return "text"
+        """Detect format from content using core service."""
+        return self.format_detector.detect_from_content(content)
     
     def _detect_file_format(self, path: str) -> str:
-        """Detect format from file extension."""
-        path_lower = str(path).lower()
-        
-        if path_lower.endswith('.md'):
-            return "markdown"
-        elif path_lower.endswith('.tex'):
-            return "latex"
-        elif path_lower.endswith('.txt'):
-            return "text"
-        elif path_lower.endswith('.pdf'):
-            return "pdf"
-        else:
-            # Try to read first few lines
-            try:
-                with open(path, 'r') as f:
-                    sample = f.read(500)
-                return self._detect_content_format(sample)
-            except:
-                return "unknown"
+        """Detect format from file extension using core service."""
+        return self.format_detector.detect_from_path(path)
     
     def _extract_path_from_result(self, result: str) -> str:
         """Extract file path from tool result string."""
