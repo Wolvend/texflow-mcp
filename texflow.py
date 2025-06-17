@@ -529,7 +529,15 @@ def output(
                 # For non-PDF formats, suggest converting to PDF for printing
                 return f"✓ {supported_formats[output_format]} created: {actual_output}\n💡 Next steps:\n→ To print: output(action='export', source='{actual_output}', output_path='{actual_output.with_suffix('.pdf')}')\n→ To view/share: Open {actual_output} in appropriate application"
         else:
-            return f"❌ Error creating {supported_formats[output_format]}: {result.get('error', 'Unknown error')}"
+            error_msg = f"❌ Error creating {supported_formats[output_format]}: {result.get('error', 'Unknown error')}"
+            # Add LaTeX compilation errors if available
+            if result.get('latex_errors'):
+                error_msg += "\n\nLaTeX compilation errors:\n"
+                for error in result['latex_errors'][:10]:  # Show first 10 error lines
+                    if error and error != '---':
+                        error_msg += f"  {error}\n"
+                error_msg += "\n💡 Use 'document(action=\"validate\")' to check for syntax errors before exporting"
+            return error_msg
             
     else:
         return f"❌ Error: Unknown output action '{action}'. Available: print, export"

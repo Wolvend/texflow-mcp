@@ -406,15 +406,25 @@ class DocumentOperation:
             
             # Add semantic enhancements
             if result.get("success"):
+                # Use the validation service's message which includes format info
                 result["workflow"] = {
-                    "message": "Validation completed successfully",
-                    "next_steps": [
-                        {"action": "export", "description": "Generate PDF from validated document"}
-                    ]
+                    "message": result.get("message", "Validation completed"),
+                    "next_steps": []
                 }
+                
+                # Add appropriate next steps based on validation result
+                if result.get("valid"):
+                    result["workflow"]["next_steps"].append(
+                        {"action": "export", "description": "Generate PDF from validated document"}
+                    )
+                else:
+                    result["workflow"]["next_steps"].extend([
+                        {"action": "edit", "description": "Fix the reported errors"},
+                        {"action": "validate", "description": "Re-validate after fixing"}
+                    ])
             else:
                 result["workflow"] = {
-                    "message": "Validation found issues",
+                    "message": result.get("message", "Validation failed"),
                     "next_steps": [
                         {"action": "edit", "description": "Fix the reported errors"},
                         {"action": "read", "description": "Review the document content"}

@@ -137,7 +137,8 @@ class ValidationService:
             success = len(errors) == 0
             
             return {
-                "success": success,
+                "success": True,  # Validation process succeeded
+                "valid": success,  # Document is valid (no errors)
                 "format": "latex",
                 "errors": errors,
                 "warnings": warnings,
@@ -188,6 +189,7 @@ class ValidationService:
         
         return {
             "success": True,
+            "valid": True,  # Markdown has no errors, only warnings
             "format": "markdown",
             "errors": [],
             "warnings": warnings,
