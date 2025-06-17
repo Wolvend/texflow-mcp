@@ -56,7 +56,20 @@ class TemplatesOperation:
         
         # For templates tool, we pass through to the original implementation
         # but add semantic enhancements to the results
-        result = self.texflow.templates(action=action, **params)
+        # Only pass the parameters that the original function expects
+        template_params = {}
+        if "category" in params:
+            template_params["category"] = params["category"]
+        if "name" in params:
+            template_params["name"] = params["name"]
+        if "source" in params:
+            template_params["source"] = params["source"]
+        if "target" in params:
+            template_params["target"] = params["target"]
+        if "content" in params:
+            template_params["content"] = params["content"]
+            
+        result = self.texflow.templates(action=action, **template_params)
         
         # Add semantic layer enhancements
         if isinstance(result, dict) and not result.get("error"):

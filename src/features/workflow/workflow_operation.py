@@ -48,7 +48,11 @@ class WorkflowOperation:
         
         # For workflow tool, we pass through to the original implementation
         # but add semantic enhancements to the results
-        result = self.texflow.workflow(action=action, **params)
+        # Only pass the task parameter if it exists
+        if "task" in params:
+            result = self.texflow.workflow(action=action, task=params["task"])
+        else:
+            result = self.texflow.workflow(action=action)
         
         # Add semantic layer enhancements
         if isinstance(result, dict) and not result.get("error"):
