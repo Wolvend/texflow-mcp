@@ -876,6 +876,7 @@ def discover(
     - recent: Show recently modified documents across all projects
     - fonts: Browse available fonts for LaTeX
     - capabilities: Check system dependencies
+    - packages: Discover installed LaTeX packages (Linux only)
     """
     if action == "documents":
         # List documents
@@ -1035,6 +1036,43 @@ def discover(
         
         return result
         
+    elif action == "packages":
+        # Discover installed LaTeX packages
+        try:
+            from src.core.system_checker import SystemDependencyChecker
+            checker = SystemDependencyChecker()
+            packages_info = checker.get_discovered_packages()
+            
+            # Check if it's an error response
+            if isinstance(packages_info, dict) and packages_info.get("available") is False:
+                return f"❌ Package discovery not available: {packages_info.get('message', 'Unknown error')}"
+            
+            # Check if we have valid package data
+            if not isinstance(packages_info, dict) or "total_packages" not in packages_info:
+                return "❌ Unexpected package discovery format"
+            
+            # Format output
+            result = f"📦 Discovered LaTeX Packages ({packages_info['total_packages']} total)\n"
+            result += f"Distribution: {packages_info['distribution']['name']} {packages_info['distribution']['version']}\n"
+            result += f"Package Manager: {packages_info['package_manager']}\n\n"
+            
+            # Show categories summary
+            result += "Categories:\n"
+            for cat_name, cat_info in sorted(packages_info['categories'].items()):
+                result += f"  📁 {cat_name}: {cat_info['count']} packages\n"
+            
+            result += "\n⚠️  Caveats:\n"
+            for warning in packages_info.get('warnings', []):
+                result += f"  - {warning}\n"
+            
+            result += "\n💡 Use 'tlmgr list --only-installed' for additional TeX Live packages"
+            result += "\n💡 Package availability depends on your TeX distribution installation"
+            
+            return result
+            
+        except Exception as e:
+            return f"❌ Error discovering packages: {e}"
+    
     elif action == "capabilities":
         caps = ["✓ CUPS printing system"]
         

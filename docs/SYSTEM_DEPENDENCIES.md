@@ -8,11 +8,11 @@ The system consists of three main components:
 
 1. **Manifest File** (`config/system_dependencies.json`) - Defines all dependencies with platform-specific installation info
 2. **Checker Module** (`src/core/system_checker.py`) - Performs dependency detection and version checking
-3. **MCP Resources** - Exposes dependency status through three MCP resources
+3. **MCP Resources** - Exposes dependency status through four MCP resources
 
 ## MCP Resources
 
-The TeXFlow MCP server exposes three resources for dependency information:
+The TeXFlow MCP server exposes four resources for dependency information:
 
 ### `system-dependencies://status`
 Returns complete dependency status as JSON, including:
@@ -20,6 +20,7 @@ Returns complete dependency status as JSON, including:
 - Version information where available
 - Platform compatibility
 - Installation options for missing tools
+- Discovered LaTeX packages (Linux only)
 
 ### `system-dependencies://summary`
 Returns a human-readable summary with:
@@ -32,6 +33,13 @@ Returns installation guidance for missing dependencies:
 - Categorized by essential vs optional
 - Platform-specific installation commands
 - Package manager recommendations
+
+### `system-dependencies://packages`
+Returns discovered LaTeX packages from system package manager (Linux only):
+- Total package count by category
+- Sample packages from each category
+- Distribution and package manager information
+- Important caveats about package availability
 
 ## Dependency Categories
 
@@ -158,11 +166,68 @@ for dep in suggestions["missing_essential"]:
 ### Access via MCP resource:
 The resources are automatically available when the TeXFlow MCP server starts. Client applications can access them using the MCP protocol to display dependency status and provide user guidance.
 
+## LaTeX Package Discovery
+
+TeXFlow includes automatic discovery of installed LaTeX packages through system package managers (Linux only). This helps users understand what LaTeX capabilities are available on their system.
+
+### How It Works
+
+The package discovery system:
+1. **Detects the Linux distribution** and package manager (apt/dpkg, pacman, rpm/dnf)
+2. **Queries installed packages** related to LaTeX/TeX
+3. **Categorizes packages** into logical groups (fonts, graphics, math, etc.)
+4. **Provides warnings** about detection limitations
+
+### Access Methods
+
+Package discovery is available through:
+
+1. **Discover tool**: `discover(action="packages")`
+2. **MCP Resource**: `system-dependencies://packages`
+3. **System Status**: Included in `system-dependencies://status` under `discovered_packages`
+
+### Package Categories
+
+Discovered packages are automatically categorized:
+- **core**: Essential TeX/LaTeX packages
+- **fonts**: Font packages for typography
+- **graphics**: Graphics and diagram packages (TikZ, PGF, etc.)
+- **math**: Mathematics and science packages
+- **templates**: Document classes and templates
+- **bibliography**: Citation and reference management
+- **formatting**: Layout and formatting tools
+- **science**: Domain-specific packages
+- **utilities**: Helper packages and tools
+- **documentation**: Package documentation
+- **other**: Uncategorized packages
+
+### Important Caveats
+
+1. **Package Manager Limitations**: Only shows packages installed through system package managers
+2. **TeX Live Manager**: Packages installed via `tlmgr` are not detected
+3. **Availability vs Installation**: Package manager may report packages that aren't fully configured
+4. **Platform Specific**: Currently only supports Linux distributions
+
+### Example Usage
+
+```python
+# Via discover action
+from texflow import discover
+packages_info = discover("packages")
+print(packages_info)
+
+# Via system checker
+from src.core.system_checker import SystemDependencyChecker
+checker = SystemDependencyChecker()
+packages = checker.get_discovered_packages()
+```
+
 ## Integration with TeXFlow Tools
 
 The dependency checker integrates with TeXFlow's workflow guidance system:
 - Tools automatically check for required dependencies before execution
 - Missing dependencies trigger helpful error messages with installation hints
 - Workflow suggestions adapt based on available tools
+- Package discovery helps users understand available LaTeX capabilities
 
 This ensures users get clear guidance on what needs to be installed for full TeXFlow functionality.

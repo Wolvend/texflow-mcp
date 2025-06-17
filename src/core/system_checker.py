@@ -13,6 +13,7 @@ import platform
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from .package_discovery import PackageDiscovery
 
 
 class SystemDependencyChecker:
@@ -35,6 +36,7 @@ class SystemDependencyChecker:
         self.platform_name = self._detect_platform()
         self.manifest = self._load_manifest()
         self._check_cache = {}  # Cache results for performance
+        self.package_discovery = PackageDiscovery() if self.platform_name == "linux" else None
         
     def _detect_platform(self) -> str:
         """Detect the current platform."""
@@ -279,6 +281,30 @@ class SystemDependencyChecker:
                     "status": "available" if available_count == len(category_deps) else "partial" if available_count > 0 else "unavailable"
                 }
         
+        # Add discovered packages if available
+        if self.package_discovery:
+            try:
+                discovered = self.package_discovery.discover_packages()
+                report["discovered_packages"] = {
+                    "available": True,
+                    "distribution": discovered["distribution"],
+                    "package_manager": discovered["package_manager"],
+                    "total_packages": discovered["total_packages"],
+                    "categories": discovered["categories"],
+                    "warnings": discovered["warnings"]
+                }
+            except Exception as e:
+                report["discovered_packages"] = {
+                    "available": False,
+                    "error": str(e),
+                    "message": "Failed to discover LaTeX packages"
+                }
+        else:
+            report["discovered_packages"] = {
+                "available": False,
+                "message": "Package discovery only available on Linux systems"
+            }
+        
         return report
     
     def get_missing_essential_dependencies(self) -> List[str]:
@@ -322,3 +348,20 @@ class SystemDependencyChecker:
     def clear_cache(self):
         """Clear the dependency check cache."""
         self._check_cache.clear()
+    
+    def get_discovered_packages(self) -> Dict[str, Any]:
+        """Get detailed information about discovered LaTeX packages."""
+        if not self.package_discovery:
+            return {
+                "available": False,
+                "message": "Package discovery only available on Linux systems"
+            }
+        
+        try:
+            return self.package_discovery.discover_packages()
+        except Exception as e:
+            return {
+                "available": False,
+                "error": str(e),
+                "message": "Failed to discover LaTeX packages"
+            }

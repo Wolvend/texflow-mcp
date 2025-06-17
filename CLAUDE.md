@@ -12,16 +12,17 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
   - **document**: Create, read, edit, convert, validate documents
   - **output**: Export to various formats (PDF, DOCX, etc.) and print
   - **project**: Manage document projects with organized structure
-  - **discover**: Find documents, fonts, and system capabilities
+  - **discover**: Find documents, fonts, system capabilities, and installed packages
   - **organizer**: Archive, move, clean documents and auxiliary files
   - **printer**: Manage CUPS printers and settings
   - **workflow**: Get task-specific guidance
   - **templates**: Manage document templates
-- Exposes 7 MCP resources:
+- Exposes 8 MCP resources:
   - **System Monitoring**:
-    - **system-dependencies://status**: Complete dependency status as JSON
+    - **system-dependencies://status**: Complete dependency status as JSON (includes discovered packages)
     - **system-dependencies://summary**: Human-readable dependency summary
     - **system-dependencies://missing**: Installation guidance for missing tools
+    - **system-dependencies://packages**: Discovered LaTeX packages from system package manager (Linux only)
   - **Content Discovery**:
     - **texflow://projects**: List all TeXFlow projects with commands
     - **texflow://templates**: Browse available document templates
@@ -34,6 +35,7 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
   - `operation_registry.py`: Manages operation handlers
   - `format_detector.py`: Auto-detects optimal document format
   - `system_checker.py`: Dynamic system dependency monitoring and status reporting
+  - `package_discovery.py`: Discovers installed LaTeX packages via system package managers (Linux only)
   
 - **Features**: Modular operations for document, output, project, organizer, and archive
 
@@ -48,8 +50,9 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 1. **Test locally**: `uv run python texflow_unified.py`
 2. **Test dependencies**: `python test_system_checker.py`
 3. **Test MCP resources**: `python test_mcp_resources.py`
-4. **Update MCP**: After changes, restart Claude Desktop to test
-5. **Use MCP Inspector**: For interactive testing of individual tools
+4. **Test package discovery**: `python test_package_discovery.py` (Linux only)
+5. **Update MCP**: After changes, restart Claude Desktop to test
+6. **Use MCP Inspector**: For interactive testing of individual tools
 
 ## System Dependencies
 

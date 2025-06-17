@@ -502,6 +502,50 @@ def get_missing_dependencies() -> str:
         return f"❌ Error getting missing dependencies: {str(e)}"
 
 
+@mcp.resource("system-dependencies://packages")
+def get_discovered_packages() -> str:
+    """Get discovered LaTeX packages from system package manager."""
+    try:
+        packages_info = system_checker.get_discovered_packages()
+        
+        if not packages_info.get("available", False):
+            return f"Package discovery not available: {packages_info.get('message', 'Unknown error')}"
+        
+        # Format as human-readable text
+        lines = [
+            f"📦 Discovered LaTeX Packages",
+            f"Total: {packages_info['total_packages']} packages",
+            f"Distribution: {packages_info['distribution']['name']} {packages_info['distribution']['version']}",
+            f"Package Manager: {packages_info['package_manager']}",
+            "",
+            "Categories:"
+        ]
+        
+        # Show category breakdown
+        for cat_name, cat_info in sorted(packages_info['categories'].items()):
+            lines.append(f"  • {cat_name}: {cat_info['count']} packages")
+            # Show first 5 packages in each category
+            sample_packages = cat_info['packages'][:5]
+            if sample_packages:
+                for pkg in sample_packages:
+                    lines.append(f"    - {pkg}")
+                if len(cat_info['packages']) > 5:
+                    lines.append(f"    ... and {len(cat_info['packages']) - 5} more")
+        
+        lines.extend([
+            "",
+            "⚠️  Important Notes:"
+        ])
+        
+        for warning in packages_info.get('warnings', []):
+            lines.append(f"  - {warning}")
+        
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error discovering packages: {str(e)}"
+
+
 # Additional TeXFlow content resources
 # These resources provide discoverable information about TeXFlow's state
 # They complement the system dependency resources above
