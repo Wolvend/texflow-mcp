@@ -130,6 +130,11 @@ def document(
     - status: Check for external modifications
     """
     params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
+    
+    # Document operation expects 'filename' for create action, not 'path'
+    if action == "create" and path is not None:
+        params["filename"] = params.pop("path", None)
+    
     result = semantic.execute("document", action, params)
     return format_semantic_result(result)
 
