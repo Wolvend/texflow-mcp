@@ -1,62 +1,70 @@
-# CUPS MCP Server Project Memory
-
-## Development Workflow
-
-We're using a rapid iteration pattern for MCP server development:
-
-1. **Add to Claude Desktop**: Use `claude mcp add` to add the server
-2. **Restart Claude Code**: After adding, restart Claude Code to test the server
-3. **Iterate**: Make changes, then restart Claude Code to test again
-4. **Test Tools**: 
-   - Use MCP Inspector for interactive testing
-   - Add regular test code as needed
+# TeXFlow MCP Server Project Memory
 
 ## Project Overview
 
-This is an MCP server that connects to CUPS on Linux for printing documents. The architecture uses lightweight tools:
-- **pandoc** for Markdown → PDF conversion
-- **weasyprint** for HTML → PDF (planned)
-- **rsvg-convert** for SVG → PDF (planned)
-- **convert** (ImageMagick) for image handling (planned)
-- Direct `lp/lpr` commands for CUPS interaction
+TeXFlow is a semantic document authoring MCP server that provides intelligent workflow guidance for creating LaTeX and Markdown documents. It emphasizes efficiency through smart hints and project-based organization.
 
-## Current Implementation
+## Architecture
 
-### Completed Tools
-- `list_printers` - Lists all available CUPS printers
-- `print_text` - Prints plain text content
-- `print_markdown` - Renders Markdown to PDF via pandoc and prints
-- `print_file` - Prints files from filesystem with MIME type detection
+### Unified Semantic Server (`texflow_unified.py`)
+- Single entry point that routes all operations through the semantic layer
+- Currently exposes 4 core tools:
+  - **document**: Create, read, edit, convert, validate documents
+  - **output**: Export to various formats (PDF, DOCX, etc.) and print
+  - **project**: Manage document projects with organized structure
+  - **organizer**: Archive, move, clean documents and auxiliary files
 
-### Handler Architecture
-We use a handler-based approach where each content type has its own conversion pipeline:
-```
-Input → Detector → Handler → PDF/PostScript → CUPS → Printer
-```
+### Semantic Layer (`src/`)
+- **Core Components**:
+  - `semantic_router.py`: Routes operations with workflow awareness
+  - `operation_registry.py`: Manages operation handlers
+  - `format_detector.py`: Auto-detects optimal document format
+  
+- **Features**: Modular operations for document, output, project, organizer, and archive
 
-## Testing Notes
+### Workflow Philosophy
+1. **Projects First**: Always work within a project context for organization
+2. **Edit Don't Recreate**: Use edit operations on existing documents to save tokens
+3. **Convert Don't Rewrite**: Transform between formats instead of regenerating
+4. **Validate Before Export**: Check LaTeX syntax before generating PDFs
 
-To test the server locally:
-```bash
-uv run python main.py
-```
+## Development Workflow
 
-For Claude Desktop integration:
+1. **Test locally**: `uv run python texflow_unified.py`
+2. **Update MCP**: After changes, restart Claude Desktop to test
+3. **Use MCP Inspector**: For interactive testing of individual tools
+
+## System Dependencies
+
+- **pandoc**: Document conversion (Markdown ↔ LaTeX ↔ PDF)
+- **XeLaTeX**: LaTeX compilation with Unicode support
+- **CUPS**: Linux printing system
+- **fontconfig**: Font discovery (fc-list)
+
+## Claude Desktop Configuration
+
 ```json
 {
   "mcpServers": {
-    "cups-mcp": {
+    "texflow": {
       "command": "uv",
-      "args": ["--directory", "/home/aaron/Projects/ai/mcp/cups-mcp", "run", "python", "main.py"]
+      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow"]
     }
   }
 }
 ```
 
-## Known Issues & TODOs
+## Pending Implementation
 
-- Need to handle pandoc installation check gracefully
-- Add error handling for missing system dependencies
-- Implement remaining handlers (HTML, SVG, images)
-- Add print job status tracking
-- Add printer options (paper size, orientation, etc.)
+Tools from original texflow.py that need semantic layer integration:
+- **printer**: Manage CUPS printers
+- **discover**: Find documents, fonts, system capabilities
+- **workflow**: Get task-specific guidance
+- **templates**: Manage document templates
+
+## Key Design Decisions
+
+1. **Semantic Routing**: All operations go through semantic layer for consistent workflow guidance
+2. **Project Context**: Operations are project-aware to maintain organization
+3. **Format Detection**: Automatic detection of optimal format (LaTeX vs Markdown) based on content
+4. **Efficiency Hints**: Proactive guidance to prevent token waste (e.g., edit vs recreate)

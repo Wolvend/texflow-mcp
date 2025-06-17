@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""TeXFlow Unified MCP Server - Simple Implementation
+"""TeXFlow Unified MCP Server - Semantic Document Authoring System
 
-This server exposes 8 semantic MCP tools without backward compatibility.
-Each tool provides intelligent guidance for document workflows.
+This server exposes 8 semantic MCP tools that guide document authoring workflows.
+Each tool provides intelligent guidance to ensure efficient and effective usage.
+
+WORKFLOW PHILOSOPHY:
+1. Projects First: Always work within a project context for organization
+2. Edit Don't Recreate: Use edit operations on existing documents to save tokens
+3. Convert Don't Rewrite: Transform between formats instead of regenerating
+4. Validate Before Export: Check LaTeX syntax before generating PDFs
 """
 
 import os
@@ -35,7 +41,8 @@ SESSION_CONTEXT = {
     "current_project": None,
     "default_printer": None,
     "last_used_format": None,
-    "workspace_root": Path.cwd()  # Store the initial working directory
+    "workspace_root": Path.cwd(),  # Store the initial working directory
+    "workflow_warnings_shown": set()  # Track which warnings have been shown
 }
 
 # Template directory configuration

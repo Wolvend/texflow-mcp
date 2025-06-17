@@ -73,7 +73,7 @@ class SemanticRouter:
             result = self._postprocess_result(operation, action, result)
             
             # Add workflow hints
-            result = self._add_workflow_hints(operation, action, result)
+            result = self._add_workflow_hints(operation, action, result, params)
             
             # Update context for future operations
             self._update_context(operation, action, result)
@@ -147,7 +147,7 @@ class SemanticRouter:
         
         return result
     
-    def _add_workflow_hints(self, operation: str, action: str, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _add_workflow_hints(self, operation: str, action: str, result: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """Add contextual workflow hints based on operation completion."""
         # Only add hints on success
         if not result.get("success", False):
