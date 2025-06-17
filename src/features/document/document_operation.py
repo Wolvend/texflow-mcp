@@ -16,6 +16,11 @@ import io
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 import texflow
 
+# Import core services
+from ...core.conversion_service import get_conversion_service
+from ...core.validation_service import get_validation_service
+from ...core.format_detector import get_format_detector
+
 
 class DocumentOperation:
     """Handles all document-related operations with semantic understanding."""
@@ -28,6 +33,10 @@ class DocumentOperation:
             texflow_instance: Instance of TeXFlow with all original tools
         """
         self.texflow = texflow_instance
+        # Initialize core services
+        self.conversion_service = get_conversion_service()
+        self.validation_service = get_validation_service()
+        self.format_detector = get_format_detector()
         # Simple fallback buffer - stores the last generated content
         self.last_generated_content = None
         
@@ -317,7 +326,7 @@ class DocumentOperation:
                 if validate_after:
                     format_type = self._detect_format_from_path(str(file_path))
                     if format_type == "latex":
-                        validation_result = self._validate_latex_content(fallback_result["new_content"])
+                        validation_result = self.validation_service.validate(fallback_result["new_content"], "latex")
                         fallback_result["validation"] = validation_result
                 
                 return fallback_result
@@ -342,7 +351,7 @@ class DocumentOperation:
             return {"error": str(e), "path": path}
     
     def _convert_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert document between formats."""
+        """Convert document between formats using core conversion service."""
         source = params.get("source")
         target_format = params.get("target_format", "latex")
         output_path = params.get("output_path")
@@ -350,98 +359,79 @@ class DocumentOperation:
         if not source:
             return {"error": "Source parameter is required"}
         
-        # Detect source format
-        source_format = self._detect_format_from_path(source)
-        
-        if source_format == target_format:
-            return {"error": f"Source and target formats are the same: {source_format}"}
-        
         try:
-            # Currently only markdown to latex is supported
-            if source_format == "markdown" and target_format == "latex":
-                import subprocess
-                
-                source_path = texflow.resolve_path(source)
-                if not source_path.exists():
-                    return {"error": f"Source file not found: {source_path}"}
-                
-                # Generate output path if not provided
-                if not output_path:
-                    output_file = source_path.with_suffix(".tex")
-                else:
-                    output_file = texflow.resolve_path(output_path)
-                
-                # Convert using pandoc
-                try:
-                    subprocess.run(
-                        ["pandoc", "-f", "markdown", "-t", "latex", "-o", str(output_file), str(source_path)], 
-                        check=True
-                    )
-                    
-                    return {
-                        "success": True,
-                        "source": str(source_path),
-                        "source_format": source_format,
-                        "target_format": target_format,
-                        "output": str(output_file),
-                        "message": f"Converted to {target_format}: {output_file}"
-                    }
-                except subprocess.CalledProcessError as e:
-                    return {"error": f"Conversion failed: {e}"}
-                except FileNotFoundError:
-                    return {"error": "pandoc not found - install pandoc for format conversion"}
-            else:
-                return {
-                    "error": f"Conversion from {source_format} to {target_format} not supported",
-                    "supported_conversions": ["markdown -> latex"]
+            # Resolve paths
+            source_path = texflow.resolve_path(source)
+            if output_path:
+                output_path = texflow.resolve_path(output_path)
+            
+            # Use core conversion service
+            result = self.conversion_service.convert(source_path, target_format, output_path)
+            
+            # Add semantic enhancements on success
+            if result.get("success"):
+                result["workflow"] = {
+                    "message": f"Document converted to {target_format} successfully",
+                    "next_steps": []
                 }
                 
+                # Add format-specific suggestions
+                if target_format == "latex":
+                    result["workflow"]["next_steps"].extend([
+                        {"action": "validate", "description": "Check LaTeX syntax before compiling"},
+                        {"action": "export", "description": "Generate PDF from LaTeX"}
+                    ])
+                elif target_format == "pdf":
+                    result["workflow"]["next_steps"].extend([
+                        {"action": "inspect", "description": "Preview the generated PDF"},
+                        {"action": "print", "description": "Send to printer"}
+                    ])
+                
+            return result
+                
         except Exception as e:
-            return {"error": str(e), "source": source}
+            return {"error": str(e)}
     
     def _validate_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate document syntax."""
+        """Validate document syntax using core validation service."""
         content_or_path = params.get("content_or_path")
-        format_type = params.get("format")
+        format_type = params.get("format", "auto")
         
         if not content_or_path:
             return {"error": "content_or_path parameter is required"}
         
         try:
-            # Determine if it's a path or content
-            potential_path = texflow.resolve_path(content_or_path) if content_or_path else None
+            # Use core validation service
+            result = self.validation_service.validate(content_or_path, format_type)
             
-            if potential_path and potential_path.exists():
-                # It's a path - read the content
-                content = potential_path.read_text()
-                if not format_type:
-                    format_type = self._detect_format_from_path(str(potential_path))
-                source = str(potential_path)
-            else:
-                # It's content
-                content = content_or_path
-                if not format_type:
-                    format_type = self._detect_format(content, "")
-                source = "inline content"
-            
-            # Currently only LaTeX validation is supported
-            if format_type == "latex":
-                validation_result = self._validate_latex_content(content)
+            # Add semantic enhancements
+            if result.get("success"):
+                # Use the validation service's message which includes format info
+                result["workflow"] = {
+                    "message": result.get("message", "Validation completed"),
+                    "next_steps": []
+                }
                 
-                return {
-                    "success": True,
-                    "valid": validation_result.get("valid", False),
-                    "format": format_type,
-                    "source": source,
-                    "validation_report": validation_result.get("message", "Unknown validation result")
-                }
+                # Add appropriate next steps based on validation result
+                if result.get("valid"):
+                    result["workflow"]["next_steps"].append(
+                        {"action": "export", "description": "Generate PDF from validated document"}
+                    )
+                else:
+                    result["workflow"]["next_steps"].extend([
+                        {"action": "edit", "description": "Fix the reported errors"},
+                        {"action": "validate", "description": "Re-validate after fixing"}
+                    ])
             else:
-                return {
-                    "success": True,
-                    "valid": True,
-                    "format": format_type,
-                    "message": f"No validation available for {format_type} format"
+                result["workflow"] = {
+                    "message": result.get("message", "Validation failed"),
+                    "next_steps": [
+                        {"action": "edit", "description": "Fix the reported errors"},
+                        {"action": "read", "description": "Review the document content"}
+                    ]
                 }
+            
+            return result
                 
         except Exception as e:
             return {"error": str(e)}
@@ -482,50 +472,13 @@ class DocumentOperation:
             return {"error": str(e), "path": path}
     
     def _detect_format(self, content: str, intent: str) -> str:
-        """Detect optimal format based on content and intent."""
-        # Check intent first
-        intent_lower = intent.lower()
-        if any(word in intent_lower for word in ['paper', 'thesis', 'article', 'academic', 'scientific']):
-            return "latex"
-        
-        # Check for LaTeX indicators
-        latex_indicators = [
-            r'\\begin{', r'\\end{', r'\\documentclass', 
-            r'\\usepackage', '\\\\', r'\\cite{', r'\\ref{',
-            r'\\section{', r'\\chapter{', r'\\subsection{'
-        ]
-        
-        if any(indicator in content for indicator in latex_indicators):
-            return "latex"
-        
-        # Check for math content
-        math_indicators = [
-            r'\\int', r'\\sum', r'\\frac{', r'\\sqrt{',
-            '$$', r'\\[', r'\\]', r'\\(', r'\\)'
-        ]
-        
-        if any(indicator in content for indicator in math_indicators):
-            return "latex"
-        
-        # Check for complex needs in content
-        if any(word in content.lower() for word in ['equation', 'theorem', 'proof', 'citation', 'bibliography']):
-            return "latex"
-        
-        # Default to markdown for simplicity
-        return "markdown"
+        """Detect optimal format based on content and intent using core service."""
+        result = self.format_detector.detect(content, intent)
+        return result["format"]
     
     def _detect_format_from_path(self, path: str) -> str:
-        """Detect format from file extension."""
-        path_str = str(path).lower()
-        if path_str.endswith('.tex'):
-            return "latex"
-        elif path_str.endswith('.md'):
-            return "markdown"
-        elif path_str.endswith('.txt'):
-            return "text"
-        else:
-            # Try to read and detect
-            return "unknown"
+        """Detect format from file extension using core service."""
+        return self.format_detector.detect_from_path(path)
     
     def _generate_filename(self, content: str, format_type: str) -> str:
         """Generate a filename based on content."""
@@ -577,60 +530,6 @@ class DocumentOperation:
         
         return "unknown"
     
-    def _validate_latex_content(self, content: str) -> Dict[str, Any]:
-        """Validate LaTeX content and return structured result."""
-        import subprocess
-        import tempfile
-        
-        try:
-            # Create a temporary file for validation
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.tex', delete=False) as temp_file:
-                temp_file.write(content)
-                temp_path = Path(temp_file.name)
-            
-            try:
-                # Try test compilation
-                result = subprocess.run(
-                    ["xelatex", "-interaction=nonstopmode", "-halt-on-error", str(temp_path)],
-                    cwd=temp_path.parent,
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode == 0:
-                    return {
-                        "valid": True,
-                        "message": "LaTeX validation passed"
-                    }
-                else:
-                    # Extract error from output
-                    error_lines = []
-                    for line in result.stdout.split('\n'):
-                        if line.startswith('!'):
-                            error_lines.append(line)
-                    
-                    error_msg = "\n".join(error_lines[:3]) if error_lines else "Compilation failed"
-                    return {
-                        "valid": False,
-                        "message": f"LaTeX validation failed: {error_msg}"
-                    }
-            finally:
-                # Clean up temporary files
-                temp_path.unlink(missing_ok=True)
-                # Also try to clean up generated files
-                for ext in ['.aux', '.log', '.pdf']:
-                    temp_path.with_suffix(ext).unlink(missing_ok=True)
-                    
-        except FileNotFoundError:
-            return {
-                "valid": False,
-                "message": "XeLaTeX not found - cannot validate compilation"
-            }
-        except Exception as e:
-            return {
-                "valid": False,
-                "message": f"Validation error: {str(e)}"
-            }
     
     def _try_fallback_edit_strategies(self, content: str, old_string: str, new_string: str, file_path: Path) -> Dict[str, Any]:
         """Try intelligent fallback strategies when exact string match fails."""
