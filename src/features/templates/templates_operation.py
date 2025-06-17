@@ -71,6 +71,14 @@ class TemplatesOperation:
             
         result = self.texflow.templates(action=action, **template_params)
         
+        # Convert string result to dict format for consistency
+        if isinstance(result, str):
+            result = {
+                "success": True,
+                "message": result,
+                "action": action
+            }
+        
         # Add semantic layer enhancements
         if isinstance(result, dict) and not result.get("error"):
             result = self._enhance_template_result(action, result, params, context)
