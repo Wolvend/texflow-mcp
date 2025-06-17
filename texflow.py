@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""TeXFlow Unified MCP Server - Semantic Document Authoring System
+"""TeXFlow Core Implementation - Base MCP Server
 
-This server exposes 8 semantic MCP tools that guide document authoring workflows.
-Each tool provides intelligent guidance to ensure efficient and effective usage.
+This is the CORE IMPLEMENTATION file that contains all the actual tool logic
+for TeXFlow. It serves as the foundation that texflow_unified.py builds upon.
+
+ARCHITECTURE:
+- This file: Contains all the raw tool implementations (file operations, 
+  project management, document conversion, etc.)
+- texflow_unified.py: Imports this module and wraps it with a semantic layer
+  for intelligent guidance and enhanced user experience
+
+WHY THIS SEPARATION?
+1. Modularity: Core logic is separate from semantic enhancements
+2. Testability: Can test core functions without MCP/semantic overhead  
+3. Reusability: Other systems could import and use these functions directly
+4. Backwards compatibility: Original implementation remains intact
 
 WORKFLOW PHILOSOPHY:
 1. Projects First: Always work within a project context for organization
 2. Edit Don't Recreate: Use edit operations on existing documents to save tokens
 3. Convert Don't Rewrite: Transform between formats instead of regenerating
 4. Validate Before Export: Check LaTeX syntax before generating PDFs
+
+NOTE: Users typically interact with texflow_unified.py, not this file directly.
 """
 
 import os
@@ -36,7 +50,8 @@ except ImportError:
             return decorator
     mcp = MockMCP()
 
-# Global state for session context
+# SHARED STATE: This SESSION_CONTEXT is imported and used by texflow_unified.py
+# Both files need access to the same session state to maintain consistency
 SESSION_CONTEXT = {
     "current_project": None,
     "default_printer": None,
@@ -45,7 +60,8 @@ SESSION_CONTEXT = {
     "workflow_warnings_shown": set()  # Track which warnings have been shown
 }
 
-# Template directory configuration
+# SHARED CONSTANTS: These paths are also used by texflow_unified.py
+# The unified server updates TEXFLOW_ROOT based on command line args
 TEXFLOW_ROOT = Path.home() / "Documents" / "TeXFlow"
 TEMPLATES_DIR = TEXFLOW_ROOT / "templates"  # Lowercase for convention
 
@@ -167,6 +183,9 @@ initialize_default_template()
 def resolve_path(path_str: Optional[str] = None, default_name: str = "document", 
                  extension: str = ".txt", use_project: bool = True) -> Path:
     """
+    CRITICAL SHARED FUNCTION: This is used throughout the codebase by both
+    texflow.py and the semantic layer to resolve file paths intelligently.
+    
     Resolve a path intelligently based on context.
     
     Priority order:
@@ -175,6 +194,8 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
     3. If path is relative, use workspace root
     4. If no path given and we have a project, use project content directory
     5. If no path given, use workspace root
+    
+    This function ensures consistent path handling across all tools.
     """
     if path_str:
         path = Path(path_str)
@@ -233,7 +254,15 @@ def document(
     old_string: Optional[str] = None,
     new_string: Optional[str] = None
 ) -> str:
-    """Manage document lifecycle - create, read, edit, convert, validate, and track changes.
+    """CORE TOOL: Document management implementation.
+    
+    This is the actual implementation that handles all document operations.
+    When called through texflow_unified.py, this function:
+    1. Receives parameters from the semantic layer
+    2. Performs the actual file operations
+    3. Returns raw results that get enhanced by the semantic layer
+    
+    Manage document lifecycle - create, read, edit, convert, validate, and track changes.
     
     BEST PRACTICES:
     - Use 'convert' action to transform existing documents instead of recreating content
@@ -844,6 +873,7 @@ def discover(
     
     Actions:
     - documents: List documents in project or folder
+    - recent: Show recently modified documents across all projects
     - fonts: Browse available fonts for LaTeX
     - capabilities: Check system dependencies
     """
@@ -923,6 +953,88 @@ def discover(
         except Exception as e:
             return f"❌ Error listing fonts: {e}"
             
+    elif action == "recent":
+        # List recently modified documents across all projects
+        recent_files = []
+        
+        # Traverse all projects
+        for project_dir in TEXFLOW_ROOT.iterdir():
+            if project_dir.is_dir() and (project_dir / ".texflow_project.json").exists():
+                # Look in content directory
+                content_dir = project_dir / "content"
+                if content_dir.exists():
+                    for ext in ["*.md", "*.tex", "*.pdf"]:
+                        for file in content_dir.glob(ext):
+                            if file.is_file():
+                                stat = file.stat()
+                                recent_files.append({
+                                    "path": file,
+                                    "project": project_dir.name,
+                                    "mtime": stat.st_mtime,
+                                    "size": stat.st_size
+                                })
+                
+                # Also check project root for documents
+                for ext in ["*.md", "*.tex", "*.pdf"]:
+                    for file in project_dir.glob(ext):
+                        if file.is_file():
+                            stat = file.stat()
+                            recent_files.append({
+                                "path": file,
+                                "project": project_dir.name,
+                                "mtime": stat.st_mtime,
+                                "size": stat.st_size
+                            })
+        
+        # Sort by modification time (most recent first)
+        recent_files.sort(key=lambda x: x["mtime"], reverse=True)
+        
+        # Limit to top 20 most recent
+        recent_files = recent_files[:20]
+        
+        if not recent_files:
+            return "No recent documents found across projects"
+        
+        # Format output
+        result = "📝 Recent Documents (across all projects):\n\n"
+        current_date = datetime.now()
+        
+        for file_info in recent_files:
+            # Calculate relative time
+            mtime = datetime.fromtimestamp(file_info["mtime"])
+            delta = current_date - mtime
+            
+            if delta.days == 0:
+                if delta.seconds < 3600:
+                    time_str = f"{delta.seconds // 60} minutes ago"
+                else:
+                    time_str = f"{delta.seconds // 3600} hours ago"
+            elif delta.days == 1:
+                time_str = "yesterday"
+            elif delta.days < 7:
+                time_str = f"{delta.days} days ago"
+            else:
+                time_str = mtime.strftime("%Y-%m-%d")
+            
+            # Format file size
+            size = file_info["size"]
+            if size < 1024:
+                size_str = f"{size} B"
+            elif size < 1024 * 1024:
+                size_str = f"{size / 1024:.1f} KB"
+            else:
+                size_str = f"{size / (1024 * 1024):.1f} MB"
+            
+            # Relative path from content directory
+            rel_path = file_info["path"].relative_to(TEXFLOW_ROOT / file_info["project"])
+            
+            result += f"  📄 {file_info['path'].name}\n"
+            result += f"     Project: {file_info['project']}\n"
+            result += f"     Path: {rel_path}\n"
+            result += f"     Modified: {time_str} ({size_str})\n\n"
+        
+        return result
+        
     elif action == "capabilities":
         caps = ["✓ CUPS printing system"]
         
@@ -958,7 +1070,7 @@ def discover(
         return "System Capabilities:\n" + "\n".join(caps)
         
     else:
-        return f"❌ Error: Unknown discover action '{action}'. Available: documents, fonts, capabilities"
+        return f"❌ Error: Unknown discover action '{action}'. Available: documents, fonts, capabilities, recent"
 
 
 @mcp.tool()

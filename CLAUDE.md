@@ -17,12 +17,23 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
   - **printer**: Manage CUPS printers and settings
   - **workflow**: Get task-specific guidance
   - **templates**: Manage document templates
+- Exposes 7 MCP resources:
+  - **System Monitoring**:
+    - **system-dependencies://status**: Complete dependency status as JSON
+    - **system-dependencies://summary**: Human-readable dependency summary
+    - **system-dependencies://missing**: Installation guidance for missing tools
+  - **Content Discovery**:
+    - **texflow://projects**: List all TeXFlow projects with commands
+    - **texflow://templates**: Browse available document templates
+    - **texflow://recent-documents**: Recent documents across projects
+    - **texflow://workflow-guide**: Context-aware workflow guidance
 
 ### Semantic Layer (`src/`)
 - **Core Components**:
   - `semantic_router.py`: Routes operations with workflow awareness
   - `operation_registry.py`: Manages operation handlers
   - `format_detector.py`: Auto-detects optimal document format
+  - `system_checker.py`: Dynamic system dependency monitoring and status reporting
   
 - **Features**: Modular operations for document, output, project, organizer, and archive
 
@@ -35,15 +46,27 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 ## Development Workflow
 
 1. **Test locally**: `uv run python texflow_unified.py`
-2. **Update MCP**: After changes, restart Claude Desktop to test
-3. **Use MCP Inspector**: For interactive testing of individual tools
+2. **Test dependencies**: `python test_system_checker.py`
+3. **Test MCP resources**: `python test_mcp_resources.py`
+4. **Update MCP**: After changes, restart Claude Desktop to test
+5. **Use MCP Inspector**: For interactive testing of individual tools
 
 ## System Dependencies
 
+TeXFlow includes dynamic dependency checking with automatic status reporting via MCP resources. Dependencies are categorized as:
+
+**Essential (Required for Core Functionality):**
 - **pandoc**: Document conversion (Markdown ↔ LaTeX ↔ PDF)
 - **XeLaTeX**: LaTeX compilation with Unicode support
 - **CUPS**: Linux printing system
 - **fontconfig**: Font discovery (fc-list)
+
+**Optional (Enhanced Functionality):**
+- **poppler-utils**: PDF page inspection and rendering
+- **chktex**: LaTeX syntax checking
+- **ghostscript**: PDF optimization
+
+The system automatically detects available tools, reports versions, and provides platform-specific installation guidance. See `docs/SYSTEM_DEPENDENCIES.md` for complete details.
 
 ## Claude Desktop Configuration
 

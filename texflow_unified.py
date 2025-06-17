@@ -1,8 +1,29 @@
 #!/usr/bin/env python3
 """TeXFlow Unified MCP Server - Semantic Document Authoring System
 
-This server provides semantic MCP tools that guide document authoring workflows.
-All operations are routed through the semantic layer for consistent guidance.
+This is the SEMANTIC WRAPPER that users interact with. It provides an intelligent
+layer on top of the core texflow.py implementation.
+
+ARCHITECTURE:
+- Imports texflow.py for all core tool implementations
+- Wraps each tool with semantic routing for enhanced guidance
+- Adds system dependency checking and MCP resources
+- Provides workflow hints, format suggestions, and efficiency tips
+
+HOW IT WORKS:
+1. User calls a tool (e.g., document(action='create', ...))
+2. This file routes through semantic layer: semantic.execute("document", "create", params)
+3. Semantic layer eventually calls the original texflow.document()
+4. Gets raw result back from core implementation
+5. Enhances with workflow hints, format suggestions, etc.
+6. Returns enriched result to user
+
+RELATIONSHIP TO texflow.py:
+- texflow.py = The engine (core logic)
+- texflow_unified.py = The intelligent dashboard (enhanced UX)
+
+Users get a much better experience through this unified interface while
+all the heavy lifting is still done by the proven core implementation.
 
 Usage:
     texflow [workspace_root]
@@ -20,15 +41,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from mcp.server.fastmcp import FastMCP
 from src.texflow_semantic import TeXFlowSemantic
-import texflow  # For base functionality and session context
+from src.core.system_checker import SystemDependencyChecker
+import texflow  # CRITICAL: Import the core implementation module
 
 # Create MCP server instance
 mcp = FastMCP("texflow")
 
-# Create semantic wrapper
+# Create semantic wrapper that enhances the core texflow functionality
+# This wrapper intercepts all tool calls and adds intelligent guidance
 semantic = TeXFlowSemantic(texflow)
 
-# Import session context
+# Create system dependency checker for monitoring external tools
+# This runs independently and provides status via MCP resources
+system_checker = SystemDependencyChecker()
+
+# SHARED STATE: Import session context from texflow.py
+# Both files share this state to maintain consistency
 SESSION_CONTEXT = texflow.SESSION_CONTEXT
 
 # Set workspace root from command line argument or environment variable
@@ -141,7 +169,15 @@ def document(
     page: Optional[int] = None,
     dpi: Optional[int] = None
 ) -> str:
-    """Manage document lifecycle - create, read, edit, convert, validate, and track changes.
+    """SEMANTIC WRAPPER: Document tool with intelligent guidance.
+    
+    This wrapper:
+    1. Receives the user's request
+    2. Routes through semantic layer for enhancement
+    3. Calls the core texflow.document() implementation
+    4. Enhances the result with workflow hints and suggestions
+    
+    Manage document lifecycle - create, read, edit, convert, validate, and track changes.
     
     BEST PRACTICES:
     - Work within projects for organization (use project tool first)
@@ -237,8 +273,9 @@ def discover(
     - fonts: Browse available fonts for LaTeX
     - capabilities: Check system dependencies
     """
-    # For now, use the original implementation
-    # TODO: Enhance with semantic layer for better discovery
+    # DIRECT CALL: For discover, we use the original implementation directly
+    # This is because discover doesn't need semantic enhancement yet
+    # The recent documents feature we added is in texflow.py
     result = texflow.discover(action, folder, style)
     
     # Add guidance for documents outside projects
@@ -318,7 +355,8 @@ def printer(
     - disable: Stop printer from accepting jobs
     - update: Update printer description/location
     """
-    # Use original texflow implementation
+    # DIRECT CALL: Printer doesn't have semantic enhancement yet
+    # Uses the core implementation directly
     return texflow.printer(action, name, description, location)
 
 
@@ -363,6 +401,323 @@ def templates(
     """
     # Use original texflow implementation
     return texflow.templates(action, category, name, source, target, content)
+
+
+# Add MCP Resources for system dependency status
+@mcp.resource("system-dependencies://status")
+def get_system_dependencies_status() -> str:
+    """Get current system dependencies status as JSON."""
+    try:
+        report = system_checker.check_all_dependencies()
+        import json
+        return json.dumps(report, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": str(e),
+            "message": "Failed to check system dependencies"
+        }, indent=2)
+
+
+@mcp.resource("system-dependencies://summary")  
+def get_system_dependencies_summary() -> str:
+    """Get summary of system dependencies status."""
+    try:
+        report = system_checker.check_all_dependencies()
+        summary = report.get("summary", {})
+        
+        status_emoji = {
+            "fully_operational": "✅",
+            "operational": "⚡", 
+            "degraded": "⚠️",
+            "unknown": "❓"
+        }
+        
+        emoji = status_emoji.get(summary.get("overall_status", "unknown"), "❓")
+        
+        lines = [
+            f"{emoji} TeXFlow System Dependencies Status",
+            f"Platform: {report['metadata']['platform']}",
+            f"Overall Status: {summary.get('overall_status', 'unknown')}",
+            "",
+            f"Essential: {summary.get('essential_available', 0)}/{summary.get('essential_total', 0)} available",
+            f"Optional: {summary.get('optional_available', 0)}/{summary.get('optional_total', 0)} available",
+            "",
+            "Categories:"
+        ]
+        
+        for cat_name, cat_info in report.get("categories", {}).items():
+            status_icon = "✅" if cat_info["status"] == "available" else "⚠️" if cat_info["status"] == "partial" else "❌"
+            lines.append(f"  {status_icon} {cat_name}: {cat_info['available_count']}/{cat_info['dependencies_count']}")
+        
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error checking dependencies: {str(e)}"
+
+
+@mcp.resource("system-dependencies://missing")
+def get_missing_dependencies() -> str:
+    """Get information about missing dependencies with installation hints."""
+    try:
+        suggestions = system_checker.get_installation_suggestions()
+        
+        if not suggestions["missing_essential"] and not suggestions["missing_optional"]:
+            return "✅ All dependencies are available!"
+        
+        lines = [f"Missing Dependencies ({suggestions['platform']}):", ""]
+        
+        if suggestions["missing_essential"]:
+            lines.extend([
+                "🚨 ESSENTIAL (required for core functionality):",
+                ""
+            ])
+            
+            for dep in suggestions["missing_essential"]:
+                lines.append(f"• {dep['name']}: {dep['description']}")
+                if dep.get("installation_options"):
+                    for pkg_mgr, pkg_name in dep["installation_options"].items():
+                        lines.append(f"  Install: {pkg_mgr} install {pkg_name}")
+                if dep.get("platform_note"):
+                    lines.append(f"  Note: {dep['platform_note']}")
+                lines.append("")
+        
+        if suggestions["missing_optional"]:
+            lines.extend([
+                "💡 OPTIONAL (enhanced functionality):",
+                ""
+            ])
+            
+            for dep in suggestions["missing_optional"]:
+                lines.append(f"• {dep['name']}: {dep['description']}")
+                if dep.get("installation_options"):
+                    for pkg_mgr, pkg_name in dep["installation_options"].items():
+                        lines.append(f"  Install: {pkg_mgr} install {pkg_name}")
+                if dep.get("platform_note"):
+                    lines.append(f"  Note: {dep['platform_note']}")
+                lines.append("")
+        
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error getting missing dependencies: {str(e)}"
+
+
+# Additional TeXFlow content resources
+# These resources provide discoverable information about TeXFlow's state
+# They complement the system dependency resources above
+@mcp.resource("texflow://projects")
+def get_projects_list() -> str:
+    """List all TeXFlow projects with their status and information."""
+    try:
+        # Call the core implementation to get project list
+        result = texflow.project(action="list")
+        
+        # Enhanced output with helpful hints
+        lines = ["📁 TeXFlow Projects", "=" * 40]
+        
+        if "No projects" in result:
+            lines.extend([
+                "",
+                "No projects found yet!",
+                "",
+                "💡 Get started:",
+                "→ Create a new project: project(action='create', name='my-project')",
+                "→ Import existing folder: project(action='import', name='existing-folder')"
+            ])
+        else:
+            lines.append("")
+            lines.append(result)
+            
+            # Add current project info if available
+            if SESSION_CONTEXT.get("current_project"):
+                lines.extend([
+                    "",
+                    f"📍 Current: {SESSION_CONTEXT['current_project']}",
+                    "",
+                    "💡 Project commands:",
+                    "→ Switch: project(action='switch', name='project-name')",
+                    "→ Info: project(action='info')",
+                    "→ Create document: document(action='create', content='...')"
+                ])
+                
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error listing projects: {str(e)}"
+
+
+@mcp.resource("texflow://templates") 
+def get_templates_list() -> str:
+    """List available document templates organized by category."""
+    try:
+        result = texflow.templates(action="list")
+        
+        lines = ["📄 Document Templates", "=" * 40, ""]
+        
+        if "No templates found" in result:
+            lines.extend([
+                "No templates found.",
+                "",
+                "💡 Get started with templates:",
+                "→ Create from scratch: templates(action='create', category='research', name='paper')",
+                "→ Activate current project as template: templates(action='activate', category='custom', name='my-template')",
+                "→ Clone template repository: git clone https://github.com/[user]/texflow-templates ~/Documents/TeXFlow/templates"
+            ])
+        else:
+            lines.append(result)
+            lines.extend([
+                "",
+                "💡 Template commands:",
+                "→ Use: templates(action='use', category='...', name='...')",
+                "→ Info: templates(action='info', category='...', name='...')",
+                "→ Create new: templates(action='create', category='...', name='...')"
+            ])
+            
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error listing templates: {str(e)}"
+
+
+@mcp.resource("texflow://recent-documents")
+def get_recent_documents() -> str:
+    """List recently modified documents across all projects."""
+    try:
+        # Use the new "recent" action we added to texflow.py
+        # This demonstrates how the unified server leverages core functionality
+        result = texflow.discover(action="recent")
+        
+        lines = ["📝 Recent Documents", "=" * 40, ""]
+        
+        if "No recent documents" in result or "not yet implemented" in result.lower():
+            # Fallback: list documents in current project
+            if SESSION_CONTEXT.get("current_project"):
+                docs_result = texflow.discover(action="documents")
+                lines.extend([
+                    f"Documents in current project ({SESSION_CONTEXT['current_project']}):",
+                    "",
+                    docs_result,
+                    "",
+                    "💡 Document commands:",
+                    "→ Read: document(action='read', path='...')",
+                    "→ Edit: document(action='edit', path='...')",
+                    "→ Export PDF: output(action='export', source='...')"
+                ])
+            else:
+                lines.extend([
+                    "No current project active.",
+                    "",
+                    "💡 Get started:",
+                    "→ List projects: project(action='list')",
+                    "→ Create project: project(action='create', name='...')",
+                    "→ Switch project: project(action='switch', name='...')"
+                ])
+        else:
+            lines.append(result)
+            
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error listing recent documents: {str(e)}"
+
+
+@mcp.resource("texflow://workflow-guide")
+def get_workflow_guide() -> str:
+    """Get context-aware workflow guidance based on current state."""
+    try:
+        lines = ["🎯 TeXFlow Workflow Guide", "=" * 40, ""]
+        
+        # Check current context
+        current_project = SESSION_CONTEXT.get("current_project")
+        
+        if not current_project:
+            # No project context - suggest getting started
+            lines.extend([
+                "📍 Status: No active project",
+                "",
+                "🚀 Getting Started Workflow:",
+                "",
+                "1️⃣ Create or select a project:",
+                "   project(action='create', name='my-paper', description='Research paper on...')",
+                "   OR",
+                "   project(action='list')  # See existing projects",
+                "   project(action='switch', name='existing-project')",
+                "",
+                "2️⃣ Choose a template (optional):",
+                "   templates(action='list')  # Browse available templates",
+                "   templates(action='use', category='default', name='minimal')",
+                "",
+                "3️⃣ Create your document:",
+                "   document(action='create', content='# Title', path='introduction.md')",
+                "",
+                "4️⃣ Edit and develop:",
+                "   document(action='read', path='...')  # Review content",
+                "   document(action='edit', path='...', old_string='...', new_string='...')",
+                "",
+                "5️⃣ Generate output:",
+                "   output(action='export', source='...', output_path='output/paper.pdf')"
+            ])
+        else:
+            # Project active - provide contextual guidance
+            lines.extend([
+                f"📍 Current Project: {current_project}",
+                "",
+                "📋 Available Workflows:",
+                ""
+            ])
+            
+            # Get workflow suggestions
+            workflows = [
+                ("📝 Write a Document", [
+                    "document(action='create', content='# Title\\nContent...', path='document.md')",
+                    "document(action='edit', path='document.md', old_string='...', new_string='...')",
+                    "document(action='validate', path='document.md')"
+                ]),
+                ("📄 Convert Formats", [
+                    "document(action='convert', source='document.md', target_format='latex')",
+                    "document(action='validate', path='document.tex')",
+                    "output(action='export', source='document.tex')"
+                ]),
+                ("🖨️ Generate Output", [
+                    "output(action='export', source='document.md', output_path='output/document.pdf')",
+                    "output(action='print', source='output/document.pdf')"
+                ]),
+                ("🗂️ Organize Documents", [
+                    "organizer(action='list_archived')  # See archived docs",
+                    "organizer(action='archive', path='old-draft.md', reason='Superseded')",
+                    "organizer(action='clean_aux', path='document.tex')  # Clean LaTeX files"
+                ])
+            ]
+            
+            for title, commands in workflows:
+                lines.append(f"{title}:")
+                for cmd in commands:
+                    lines.append(f"  → {cmd}")
+                lines.append("")
+            
+            # Add tips based on system status
+            missing_deps = system_checker.get_missing_essential_dependencies()
+            if missing_deps:
+                lines.extend([
+                    "⚠️  Limited functionality - missing dependencies:",
+                    f"   {', '.join(missing_deps)}",
+                    "   View details: ReadMcpResourceTool(uri='system-dependencies://missing')",
+                    ""
+                ])
+                
+        lines.extend([
+            "💡 Pro Tips:",
+            "• Work in projects for better organization",
+            "• Use templates to save time",  
+            "• Edit existing files instead of recreating",
+            "• Convert formats instead of rewriting",
+            "• Validate LaTeX before generating PDFs"
+        ])
+        
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error generating workflow guide: {str(e)}"
 
 
 def main():
