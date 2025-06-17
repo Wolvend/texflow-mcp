@@ -37,6 +37,11 @@ from datetime import datetime
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Import core services to eliminate duplication
+from src.core.conversion_service import get_conversion_service
+from src.core.validation_service import get_validation_service
+from src.core.format_detector import get_format_detector
+
 try:
     from mcp.server.fastmcp import FastMCP
     # Create MCP server instance
@@ -64,6 +69,11 @@ SESSION_CONTEXT = {
 # The unified server updates TEXFLOW_ROOT based on command line args
 TEXFLOW_ROOT = Path.home() / "Documents" / "TeXFlow"
 TEMPLATES_DIR = TEXFLOW_ROOT / "templates"  # Lowercase for convention
+
+# Initialize core services to eliminate duplication
+conversion_service = get_conversion_service()
+validation_service = get_validation_service()
+format_detector = get_format_detector()
 
 
 def initialize_default_template():
@@ -368,17 +378,14 @@ def document(
         source_path = resolve_path(source)
         if not source_path.exists():
             return f"❌ Error: Source file not found: {source_path}"
-            
-        if target_format == "latex" and source_path.suffix == ".md":
-            # Convert Markdown to LaTeX using pandoc
-            output_path = source_path.with_suffix(".tex")
-            try:
-                subprocess.run(["pandoc", "-f", "markdown", "-t", "latex", "-s", "-o", str(output_path), str(source_path)], check=True)
-                return f"✓ Converted to LaTeX: {output_path}\n💡 Next: document(action='edit', path='{output_path}')"
-            except subprocess.CalledProcessError as e:
-                return f"❌ Error converting document: {e}"
+        
+        # Use core conversion service
+        result = conversion_service.convert(source_path, target_format)
+        
+        if result.get("success"):
+            return f"✓ Converted to {target_format}: {result['output_path']}\n💡 Next: document(action='edit', path='{result['output_path']}')"
         else:
-            return f"❌ Error: Conversion from {source_path.suffix} to {target_format} not supported"
+            return f"❌ Error converting document: {result.get('error', 'Unknown error')}"
             
     elif action == "validate":
         if not path:
@@ -388,54 +395,27 @@ def document(
         if not file_path.exists():
             return f"❌ Error: File not found: {file_path}"
             
-        if file_path.suffix == ".tex":
-            # Validate LaTeX file
-            errors = []
-            warnings = []
-            
-            # Try chktex if available
-            try:
-                result = subprocess.run(["chktex", str(file_path)], capture_output=True, text=True)
-                if "Error" in result.stderr:
-                    errors.append(result.stderr)
-                if "Warning" in result.stdout:
-                    # Extract warning count
-                    import re
-                    match = re.search(r'(\d+) warnings? printed', result.stdout)
-                    if match:
-                        warnings.append(f"{match.group(1)} warnings found (run chktex for details)")
-            except FileNotFoundError:
-                pass  # chktex not available
-                
-            # Try test compilation
-            try:
-                result = subprocess.run(
-                    ["xelatex", "-interaction=nonstopmode", "-halt-on-error", str(file_path)],
-                    cwd=file_path.parent,
-                    capture_output=True,
-                    text=True
-                )
-                if result.returncode != 0:
-                    # Extract error from output
-                    error_lines = []
-                    for line in result.stdout.split('\n'):
-                        if line.startswith('!'):
-                            error_lines.append(line)
-                    if error_lines:
-                        errors.extend(error_lines[:3])  # First 3 errors
-                    else:
-                        errors.append("Compilation failed (check log file)")
-            except FileNotFoundError:
-                errors.append("XeLaTeX not found - cannot validate compilation")
-                
-            if errors:
-                return f"❌ Validation failed:\n" + "\n".join(errors) + "\n💡 Next: document(action='edit', path='{file_path}') to fix errors"
-            elif warnings:
-                return f"✓ Validation passed with warnings:\n" + "\n".join(warnings) + "\n💡 Next steps:\n→ Edit: document(action='edit', path='{file_path}') to fix warnings\n→ Export: output(action='export', source='{file_path}') to generate PDF"
+        # Use core validation service
+        result = validation_service.validate(file_path)
+        
+        if result.get("success"):
+            if result.get("valid"):
+                return f"✅ Document is valid: {file_path}\n💡 Next: output(action='export', source='{file_path}')"
             else:
-                return f"✓ Validation passed!\n💡 Next: output(action='export', source='{file_path}') to generate PDF"
+                # Format validation errors
+                msg = f"⚠️ Validation found issues in {file_path}:\n"
+                if result.get("errors"):
+                    msg += "\nErrors:\n"
+                    for error in result["errors"]:
+                        msg += f"  • Line {error.get('line', '?')}: {error['message']}\n"
+                if result.get("warnings"):
+                    msg += "\nWarnings:\n"
+                    for warning in result["warnings"]:
+                        msg += f"  • Line {warning.get('line', '?')}: {warning['message']}\n"
+                msg += f"\n💡 Next: document(action='edit', path='{file_path}') to fix issues"
+                return msg
         else:
-            return f"✓ No validation available for {file_path.suffix} files\n💡 Next: output(action='export', source='{file_path}')"
+            return f"❌ Error validating document: {result.get('error', 'Unknown error')}"
             
     elif action == "status":
         if not path:
@@ -537,41 +517,19 @@ def output(
             return f"❌ Error: Unsupported output format '{output_format}'. Supported: {', '.join(supported_formats.keys())}"
             
         # Convert based on source type and output format
-        try:
+        # Use core conversion service for all conversions
+        format_type = output_format[1:]  # Remove the dot (e.g., ".pdf" -> "pdf")
+        result = conversion_service.convert(source_path, format_type, out_path)
+        
+        if result.get("success"):
+            actual_output = result.get('output_path', out_path)
             if output_format == ".pdf":
-                # Special handling for PDF generation
-                if source_path.suffix == ".md":
-                    # Markdown to PDF via pandoc with XeLaTeX
-                    subprocess.run(["pandoc", source_path, "-o", out_path, "--pdf-engine=xelatex"], check=True)
-                elif source_path.suffix == ".tex":
-                    # LaTeX to PDF via xelatex directly
-                    result = subprocess.run(["xelatex", "-interaction=nonstopmode", source_path.name], 
-                                          cwd=source_path.parent, check=True)
-                    # The PDF is created in the same directory as the .tex file
-                    actual_pdf_path = source_path.with_suffix(".pdf")
-                    # Move to desired location if different
-                    if output_path and out_path != actual_pdf_path:
-                        out_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.move(str(actual_pdf_path), str(out_path))
-                else:
-                    # Other formats to PDF via pandoc
-                    subprocess.run(["pandoc", source_path, "-o", out_path], check=True)
-            else:
-                # All other conversions via pandoc
-                if source_path.suffix in [".md", ".tex", ".rst", ".org", ".txt"]:
-                    subprocess.run(["pandoc", source_path, "-o", out_path], check=True)
-                else:
-                    return f"❌ Error: Cannot convert {source_path.suffix} to {output_format}"
-                    
-            # Success message with appropriate next action
-            if output_format == ".pdf":
-                return f"✓ {supported_formats[output_format]} created: {out_path}\n💡 Next: output(action='print', source='{out_path}')"
+                return f"✓ {supported_formats[output_format]} created: {actual_output}\n💡 Next: output(action='print', source='{actual_output}')"
             else:
                 # For non-PDF formats, suggest converting to PDF for printing
-                return f"✓ {supported_formats[output_format]} created: {out_path}\n💡 Next steps:\n→ To print: output(action='export', source='{out_path}', output_path='{out_path.with_suffix('.pdf')}')\n→ To view/share: Open {out_path} in appropriate application"
-                
-        except subprocess.CalledProcessError as e:
-            return f"❌ Error creating {supported_formats[output_format]}: {e}"
+                return f"✓ {supported_formats[output_format]} created: {actual_output}\n💡 Next steps:\n→ To print: output(action='export', source='{actual_output}', output_path='{actual_output.with_suffix('.pdf')}')\n→ To view/share: Open {actual_output} in appropriate application"
+        else:
+            return f"❌ Error creating {supported_formats[output_format]}: {result.get('error', 'Unknown error')}"
             
     else:
         return f"❌ Error: Unknown output action '{action}'. Available: print, export"

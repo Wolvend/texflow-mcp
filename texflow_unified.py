@@ -277,19 +277,15 @@ def discover(
     - fonts: Browse available fonts for LaTeX
     - capabilities: Check system dependencies
     """
-    # DIRECT CALL: For discover, we use the original implementation directly
-    # This is because discover doesn't need semantic enhancement yet
-    # The recent documents feature we added is in texflow.py
-    result = texflow.discover(action, folder, style)
+    # Route through semantic layer for enhanced discovery features
+    params = {}
+    if folder is not None:
+        params["folder"] = folder
+    if style is not None:
+        params["style"] = style
     
-    # Add guidance for documents outside projects
-    if action == "documents" and not SESSION_CONTEXT.get("current_project"):
-        if "Documents in" in result and "No documents found" not in result:
-            result += "\n\n💡 TIP: These documents are outside a project."
-            result += "\n→ To organize them: project(action='import', name='folder-name')"
-            result += "\n→ Or create a project: project(action='create', name='my-project')"
-    
-    return result
+    result = semantic.execute("discover", action, params)
+    return format_semantic_result(result)
 
 
 @mcp.tool()
@@ -359,9 +355,17 @@ def printer(
     - disable: Stop printer from accepting jobs
     - update: Update printer description/location
     """
-    # DIRECT CALL: Printer doesn't have semantic enhancement yet
-    # Uses the core implementation directly
-    return texflow.printer(action, name, description, location)
+    # Route through semantic layer for enhanced printer management
+    params = {}
+    if name is not None:
+        params["name"] = name
+    if description is not None:
+        params["description"] = description
+    if location is not None:
+        params["location"] = location
+    
+    result = semantic.execute("printer", action, params)
+    return format_semantic_result(result)
 
 
 @mcp.tool()
@@ -376,8 +380,13 @@ def workflow(
     - guide: Get comprehensive guidance for a workflow
     - next_steps: See contextual next actions based on current state
     """
-    # Use original texflow implementation
-    return texflow.workflow(action, task)
+    # Route through semantic layer for enhanced guidance
+    params = {}
+    if task is not None:
+        params["task"] = task
+    
+    result = semantic.execute("workflow", action, params)
+    return format_semantic_result(result)
 
 
 @mcp.tool()
@@ -403,8 +412,21 @@ def templates(
     - delete: Remove a template
     - info: Get details about a specific template
     """
-    # Use original texflow implementation
-    return texflow.templates(action, category, name, source, target, content)
+    # Route through semantic layer for enhanced template management
+    params = {}
+    if category is not None:
+        params["category"] = category
+    if name is not None:
+        params["name"] = name
+    if source is not None:
+        params["source"] = source
+    if target is not None:
+        params["target"] = target
+    if content is not None:
+        params["content"] = content
+    
+    result = semantic.execute("templates", action, params)
+    return format_semantic_result(result)
 
 
 # Add MCP Resources for system dependency status

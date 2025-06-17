@@ -16,6 +16,10 @@ from .features.output import OutputOperation
 from .features.project import ProjectOperation
 from .features.organizer import OrganizerOperation
 from .features.archive import ArchiveOperation
+from .features.printer import PrinterOperation
+from .features.discover import DiscoverOperation
+from .features.workflow import WorkflowOperation
+from .features.templates import TemplatesOperation
 
 
 class TeXFlowSemantic:
@@ -77,10 +81,25 @@ class TeXFlowSemantic:
         self.registry.register("archive", archive_op)
         self.router.register_operation("archive", archive_op)
         
-        # TODO: Register remaining operations when implemented
-        # - printer
-        # - discover
-        # - workflow
+        # Printer operation
+        printer_op = PrinterOperation(self.texflow)
+        self.registry.register("printer", printer_op)
+        self.router.register_operation("printer", printer_op)
+        
+        # Discover operation
+        discover_op = DiscoverOperation(self.texflow)
+        self.registry.register("discover", discover_op)
+        self.router.register_operation("discover", discover_op)
+        
+        # Workflow operation
+        workflow_op = WorkflowOperation(self.texflow)
+        self.registry.register("workflow", workflow_op)
+        self.router.register_operation("workflow", workflow_op)
+        
+        # Templates operation
+        templates_op = TemplatesOperation(self.texflow)
+        self.registry.register("templates", templates_op)
+        self.router.register_operation("templates", templates_op)
     
     def execute(self, operation: str, action: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
         """
