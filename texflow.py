@@ -186,7 +186,7 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
         # Relative path with project context
         if use_project and SESSION_CONTEXT["current_project"]:
             # current_project now contains the full relative path from TeXFlow root
-            project_base = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"]
+            project_base = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"]
             # If path starts with common project folders, use it directly
             if str(path).startswith(("content/", "output/", "assets/")):
                 return project_base / path

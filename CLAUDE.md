@@ -48,11 +48,13 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
   "mcpServers": {
     "texflow": {
       "command": "uv",
-      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow"]
+      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow", "/home/aaron/Documents/TeXFlow"]
     }
   }
 }
 ```
+
+The last argument is the workspace root where all TeXFlow projects will be stored. You can also use the `TEXFLOW_WORKSPACE` environment variable instead.
 
 ## Pending Implementation
 

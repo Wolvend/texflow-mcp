@@ -3,8 +3,14 @@
 
 This server provides semantic MCP tools that guide document authoring workflows.
 All operations are routed through the semantic layer for consistent guidance.
+
+Usage:
+    texflow [workspace_root]
+    
+    workspace_root: Base directory for TeXFlow projects (default: ~/Documents/TeXFlow)
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -24,6 +30,18 @@ semantic = TeXFlowSemantic(texflow.mcp)
 
 # Import session context
 SESSION_CONTEXT = texflow.SESSION_CONTEXT
+
+# Set workspace root from command line argument or environment variable
+if len(sys.argv) > 1:
+    workspace_root = Path(sys.argv[1]).expanduser().resolve()
+elif os.environ.get("TEXFLOW_WORKSPACE"):
+    workspace_root = Path(os.environ["TEXFLOW_WORKSPACE"]).expanduser().resolve()
+else:
+    workspace_root = Path.home() / "Documents" / "TeXFlow"
+
+# Update session context with proper workspace root
+SESSION_CONTEXT["workspace_root"] = workspace_root
+texflow.TEXFLOW_ROOT = workspace_root
 
 
 def format_semantic_result(result: Dict[str, Any]) -> str:
