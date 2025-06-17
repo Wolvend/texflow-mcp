@@ -88,6 +88,16 @@ def format_semantic_result(result: Dict[str, Any]) -> str:
         output += f"\n\n🔄 {conv['message']}"
         output += f"\n   Example: {conv['command']}"
     
+    # Add project hints
+    if result.get("project_hint"):
+        hint = result["project_hint"]
+        output += f"\n\n{hint['message']}"
+        if hint.get("important"):
+            output += f"\n{hint['important']}"
+        if hint.get("next_steps"):
+            for step in hint["next_steps"]:
+                output += f"\n→ {step['description']}: {step['command']}"
+    
     return output
 
 
@@ -177,6 +187,37 @@ def project(
 
 
 @mcp.tool()
+def discover(
+    action: str,
+    folder: Optional[str] = None,
+    style: Optional[str] = None
+) -> str:
+    """Find documents, fonts, and system capabilities.
+    
+    WORKFLOW TIP: Use discover to find documents before editing or exporting.
+    Shows relative paths from project root for easy reference.
+    
+    Actions:
+    - documents: List documents in project or folder (shows relative paths)
+    - recent: Show recently modified documents across all projects
+    - fonts: Browse available fonts for LaTeX
+    - capabilities: Check system dependencies
+    """
+    # For now, use the original implementation
+    # TODO: Enhance with semantic layer for better discovery
+    result = texflow.discover(action, folder, style)
+    
+    # Add guidance for documents outside projects
+    if action == "documents" and not SESSION_CONTEXT.get("current_project"):
+        if "Documents in" in result and "No documents found" not in result:
+            result += "\n\n💡 TIP: These documents are outside a project."
+            result += "\n→ To organize them: project(action='import', name='folder-name')"
+            result += "\n→ Or create a project: project(action='create', name='my-project')"
+    
+    return result
+
+
+@mcp.tool()
 def organizer(
     action: str,
     source: Optional[str] = None,
@@ -214,6 +255,70 @@ def organizer(
     params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
     result = semantic.execute("organizer", action, params)
     return format_semantic_result(result)
+
+
+@mcp.tool()
+def printer(
+    action: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    location: Optional[str] = None
+) -> str:
+    """Manage printing hardware and configuration.
+    
+    Actions:
+    - list: Show all available printers with status
+    - info: Get detailed printer information
+    - set_default: Change the default printer
+    - enable: Allow printer to accept jobs
+    - disable: Stop printer from accepting jobs
+    - update: Update printer description/location
+    """
+    # Use original texflow implementation
+    return texflow.printer(action, name, description, location)
+
+
+@mcp.tool()
+def workflow(
+    action: str,
+    task: Optional[str] = None
+) -> str:
+    """Get intelligent guidance and workflow automation.
+    
+    Actions:
+    - suggest: Get workflow recommendations for a task
+    - guide: Get comprehensive guidance for a workflow
+    - next_steps: See contextual next actions based on current state
+    """
+    # Use original texflow implementation
+    return texflow.workflow(action, task)
+
+
+@mcp.tool()
+def templates(
+    action: str,
+    category: Optional[str] = None,
+    name: Optional[str] = None,
+    source: Optional[str] = None,
+    target: Optional[str] = None,
+    content: Optional[str] = None
+) -> str:
+    """Manage document templates for quick project starts.
+    
+    Templates are organized by category in ~/Documents/TeXFlow/templates/.
+    Start from templates to save time and ensure consistent formatting.
+    
+    Actions:
+    - list: Show available templates (optionally filtered by category)
+    - use: Copy a template to current project or specified location
+    - activate: Convert current project into a template
+    - create: Create a new template from content or existing document
+    - rename: Rename a template
+    - delete: Remove a template
+    - info: Get details about a specific template
+    """
+    # Use original texflow implementation
+    return texflow.templates(action, category, name, source, target, content)
 
 
 def main():

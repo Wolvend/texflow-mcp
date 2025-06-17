@@ -90,18 +90,14 @@ class SemanticRouter:
     
     def _preprocess_params(self, operation: str, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Pre-process parameters based on operation type."""
-        # Enforce project-first workflow for document creation
+        # Auto-detect format for document operations
         if operation == "document" and action == "create":
-            if not self.current_context.get("project"):
-                # Refuse to create documents outside of projects
-                raise ValueError("No active project. Please create or switch to a project first.\n"
-                               "→ List projects: project(action='list')\n"
-                               "→ Create project: project(action='create', name='...')\n"
-                               "→ Switch project: project(action='switch', name='...')")
-            
-            # Auto-detect format
             if "format" not in params or params["format"] == "auto":
                 params["format"] = self._detect_format(params.get("content", ""))
+            
+            # Mark if creating outside a project for warning later
+            if not self.current_context.get("project"):
+                params["_outside_project"] = True
         
         # Add current project context if available
         if "project" in self.current_context and "path" not in params:
@@ -202,6 +198,31 @@ class SemanticRouter:
                 result["conversion_hint"] = {
                     "message": "Need LaTeX features? Convert your Markdown instead of rewriting",
                     "command": "document(action='convert', source='file.md', target_format='latex')"
+                }
+        
+        # Add warning for documents created outside projects
+        if operation == "document" and action == "create" and params.get("_outside_project"):
+            if result.get("path"):
+                # Extract directory from path
+                import os
+                doc_dir = os.path.dirname(result["path"])
+                result["project_hint"] = {
+                    "message": "⚠️  Document created outside a project",
+                    "important": "To work effectively with this document, import its directory as a project",
+                    "next_steps": [
+                        {
+                            "operation": "project",
+                            "action": "import", 
+                            "description": "Import this directory as a TeXFlow project",
+                            "command": f"project(action='import', name='my-project')"
+                        },
+                        {
+                            "operation": "project",
+                            "action": "create",
+                            "description": "Or create a new project",
+                            "command": "project(action='create', name='my-project')"
+                        }
+                    ]
                 }
         
         return result

@@ -8,11 +8,15 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 
 ### Unified Semantic Server (`texflow_unified.py`)
 - Single entry point that routes all operations through the semantic layer
-- Currently exposes 4 core tools:
+- Exposes all 8 semantic tools:
   - **document**: Create, read, edit, convert, validate documents
   - **output**: Export to various formats (PDF, DOCX, etc.) and print
   - **project**: Manage document projects with organized structure
+  - **discover**: Find documents, fonts, and system capabilities
   - **organizer**: Archive, move, clean documents and auxiliary files
+  - **printer**: Manage CUPS printers and settings
+  - **workflow**: Get task-specific guidance
+  - **templates**: Manage document templates
 
 ### Semantic Layer (`src/`)
 - **Core Components**:
@@ -56,13 +60,13 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 
 The last argument is the workspace root where all TeXFlow projects will be stored. You can also use the `TEXFLOW_WORKSPACE` environment variable instead.
 
-## Pending Implementation
+## Pending Enhancements
 
-Tools from original texflow.py that need semantic layer integration:
-- **printer**: Manage CUPS printers
-- **discover**: Find documents, fonts, system capabilities
-- **workflow**: Get task-specific guidance
-- **templates**: Manage document templates
+All 8 semantic tools are now exposed. Future enhancements:
+- **Semantic layer integration**: printer, discover, workflow, and templates currently use original implementation
+- **Document references**: Simple aliasing system for easier document access
+- **Recent documents**: Track and display recently modified documents across projects
+- **Enhanced discovery**: Better search capabilities within projects
 
 ## Key Design Decisions
 

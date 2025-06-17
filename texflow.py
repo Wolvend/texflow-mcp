@@ -850,9 +850,9 @@ def discover(
     if action == "documents":
         # List documents
         if SESSION_CONTEXT.get("current_project"):
-            base_path = Path.home() / "Documents" / "TeXFlow" / SESSION_CONTEXT["current_project"] / "content"
+            base_path = TEXFLOW_ROOT / SESSION_CONTEXT["current_project"] / "content"
         else:
-            base_path = Path.home() / "Documents"
+            base_path = SESSION_CONTEXT["workspace_root"]
             
         if folder:
             base_path = base_path / folder
