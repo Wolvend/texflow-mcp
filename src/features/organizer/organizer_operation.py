@@ -17,6 +17,7 @@ from datetime import datetime
 import json
 
 from src.features.document.document_manager import document_manager
+import texflow
 
 
 class OrganizerOperation:
@@ -247,7 +248,7 @@ class OrganizerOperation:
                         "action": action,
                         "reason": "Missing required parameter 'source'"
                     })
-                elif not Path(params["source"]).expanduser().exists():
+                elif not texflow.resolve_path(params["source"]).exists():
                     errors.append({
                         "index": i,
                         "action": action,
@@ -267,7 +268,7 @@ class OrganizerOperation:
                         "action": action,
                         "reason": "Missing required parameter 'path'"
                     })
-                elif not Path(params["path"]).expanduser().exists():
+                elif not texflow.resolve_path(params["path"]).exists():
                     errors.append({
                         "index": i,
                         "action": action,
@@ -281,7 +282,7 @@ class OrganizerOperation:
                         "action": action,
                         "reason": "Missing required parameter 'archive_path'"
                     })
-                elif not Path(params["archive_path"]).expanduser().exists():
+                elif not texflow.resolve_path(params["archive_path"]).exists():
                     errors.append({
                         "index": i,
                         "action": action,
@@ -359,14 +360,21 @@ class OrganizerOperation:
     
     def _move_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Move document to new location."""
-        source = Path(params.get("source", "")).expanduser()
+        source_path = params.get("source", "")
         dest_param = params.get("destination", "")
+        
+        # Use texflow path resolution
+        source = texflow.resolve_path(source_path)
         
         if not source.exists():
             return {"success": False, "error": f"Source not found: {source}"}
         
-        # Parse destination
-        dest = Path(dest_param).expanduser()
+        # Parse destination - resolve relative to source location if needed
+        if dest_param.startswith('/'):
+            dest = Path(dest_param)
+        else:
+            # For relative destinations, resolve relative to source directory
+            dest = source.parent / dest_param
         
         # If destination is a directory, keep original filename
         if dest.is_dir() or dest_param.endswith('/'):
@@ -458,18 +466,23 @@ class OrganizerOperation:
         formatted = []
         for arch in archives:
             size_kb = arch.get("size", 0) / 1024
+            # Convert absolute path to relative path for restore command
+            current_path = Path(arch["current_path"])
+            archive_relative_path = f".texflow_archive/{current_path.name}"
+            
             formatted.append({
-                "name": arch.get("original_name", Path(arch["current_path"]).name),
+                "name": arch.get("original_name", current_path.name),
                 "archived_at": arch.get("archived_at", arch.get("modified", "unknown")),
                 "reason": arch.get("reason", "unknown"),
                 "size": f"{size_kb:.1f} KB",
-                "path": arch["current_path"]
+                "path": archive_relative_path
             })
         
         return {
             "success": True,
             "message": f"Found {len(archives)} archived document(s)",
-            "archives": formatted
+            "archives": formatted,
+            "hint": "To restore: organizer(action='restore', archive_path='PATH_FROM_LIST')"
         }
     
     def _find_versions(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -542,7 +555,7 @@ class OrganizerOperation:
     
     def _clean_auxiliary_files(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Clean LaTeX auxiliary files while preserving source and output."""
-        path = Path(params.get("path", "")).expanduser()
+        path = texflow.resolve_path(params.get("path", ""))
         keep_bib = params.get("keep_bib", True)
         
         if not path.exists():
@@ -611,7 +624,7 @@ class OrganizerOperation:
     
     def _refresh_auxiliary_files(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """Remove specific auxiliary files to force regeneration."""
-        path = Path(params.get("path", "")).expanduser()
+        path = texflow.resolve_path(params.get("path", ""))
         types = params.get("types", "all")
         
         if not path.exists() or not path.suffix == '.tex':
@@ -660,7 +673,7 @@ class OrganizerOperation:
     
     def _list_auxiliary_files(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """List all auxiliary files for a LaTeX document."""
-        path = Path(params.get("path", "")).expanduser()
+        path = texflow.resolve_path(params.get("path", ""))
         
         if not path.exists() or not path.suffix == '.tex':
             return {"success": False, "error": f"LaTeX file not found: {path}"}

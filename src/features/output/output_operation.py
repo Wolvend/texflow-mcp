@@ -171,32 +171,18 @@ class OutputOperation:
     
     def _print_file(self, source: str, printer: Optional[str], format_hint: Optional[str]) -> Dict[str, Any]:
         """Print a file."""
-        # Check if it's a document name (no path separators)
-        if '/' not in source and '\\' not in source:
-            # Try to print from documents folder
-            result = self.texflow.print_from_documents(source, printer=printer)
-        else:
-            # Full path provided
-            if not format_hint:
-                format_hint = self._detect_file_format(source)
-            
-            # Route based on format
-            if format_hint == "markdown":
-                result = self.texflow.print_markdown(file_path=source, printer=printer)
-            elif format_hint == "latex":
-                result = self.texflow.print_latex(file_path=source, printer=printer)
-            else:
-                # Use generic file printer
-                result = self.texflow.print_file(source, printer=printer)
+        # Use unified output function for printing
+        result_str = self.texflow.output(
+            action="print",
+            source=source,
+            printer=printer
+        )
         
-        return {
-            "success": True,
-            "action": "print",
-            "source": source,
-            "format": format_hint or "auto-detected",
-            "printer": printer or "default",
-            "message": f"Printed: {source}"
-        }
+        # Return formatted result
+        if result_str.startswith("❌"):
+            return {"error": result_str}
+        else:
+            return {"message": result_str, "source": source, "printer": printer or "default"}
     
     def _export_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -215,46 +201,32 @@ class OutputOperation:
         
         try:
             # Determine format
-            if source and not format_hint:
+            if source and (not format_hint or format_hint == "auto"):
                 format_hint = self._detect_file_format(source)
-            elif content and not format_hint:
+            elif content and (not format_hint or format_hint == "auto"):
                 format_hint = self._detect_content_format(content)
             
-            # Route to appropriate converter
-            if format_hint == "markdown":
-                if source:
-                    result = self.texflow.markdown_to_pdf(
-                        file_path=source,
-                        output_path=output_path,
-                        title=title
-                    )
+            # Route to unified output function
+            if format_hint in ["markdown", "latex"]:
+                result_str = self.texflow.output(
+                    action="export",
+                    source=source,
+                    content=content,
+                    format=format_hint,
+                    output_path=output_path
+                )
+                
+                # The unified output function returns a string result
+                if result_str.startswith("❌"):
+                    return {"error": result_str}
                 else:
-                    result = self.texflow.markdown_to_pdf(
-                        content=content,
-                        output_path=output_path,
-                        title=title
-                    )
-            elif format_hint == "latex":
-                if source:
-                    result = self.texflow.latex_to_pdf(
-                        file_path=source,
-                        output_path=output_path,
-                        title=title
-                    )
-                else:
-                    result = self.texflow.latex_to_pdf(
-                        content=content,
-                        output_path=output_path,
-                        title=title
-                    )
+                    return {"message": result_str, "path": output_path}
             else:
                 return {
-                    "error": f"Cannot export {format_hint} to PDF",
-                    "supported_formats": ["markdown", "latex"]
+                    "error": f"Cannot export from format '{format_hint}' to PDF. Auto-detected format may be unsupported.",
+                    "supported_formats": ["markdown", "latex"],
+                    "hint": "Try specifying format='markdown' or format='latex' explicitly"
                 }
-            
-            # Extract output path from result
-            pdf_path = self._extract_path_from_result(result)
             
             return {
                 "success": True,

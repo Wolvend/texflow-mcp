@@ -26,7 +26,7 @@ import texflow  # For base functionality and session context
 mcp = FastMCP("texflow")
 
 # Create semantic wrapper
-semantic = TeXFlowSemantic(texflow.mcp)
+semantic = TeXFlowSemantic(texflow)
 
 # Import session context
 SESSION_CONTEXT = texflow.SESSION_CONTEXT
@@ -97,6 +97,23 @@ def format_semantic_result(result: Dict[str, Any]) -> str:
         if hint.get("next_steps"):
             for step in hint["next_steps"]:
                 output += f"\n→ {step['description']}: {step['command']}"
+    
+    # Add archive list for organizer operations
+    if result.get("archives"):
+        archives = result["archives"]
+        if archives:
+            output += "\n\nArchived documents:"
+            for arch in archives:
+                output += f"\n  📄 {arch['name']} ({arch['size']})"
+                output += f"\n     Path: {arch['path']}"
+                output += f"\n     Archived: {arch['archived_at']}"
+                if arch.get('reason'):
+                    output += f"\n     Reason: {arch['reason']}"
+                output += "\n"
+    
+    # Add general hints
+    if result.get("hint"):
+        output += f"\n💡 {result['hint']}"
     
     return output
 
@@ -258,6 +275,16 @@ def organizer(
     - batch: Execute multiple operations
     """
     params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
+    
+    # Normalize parameter names for consistency
+    # If both source and path are provided, source takes precedence
+    if params.get("source") and params.get("path"):
+        params.pop("path")
+    elif params.get("path") and not params.get("source"):
+        # For actions that expect 'source', map 'path' to 'source'
+        if action in ["move"]:
+            params["source"] = params.pop("path")
+    
     result = semantic.execute("organizer", action, params)
     return format_semantic_result(result)
 

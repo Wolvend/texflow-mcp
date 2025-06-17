@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import texflow
 
 
 class DocumentManager:
@@ -29,7 +30,7 @@ class DocumentManager:
         Returns:
             Dict with archive details
         """
-        source = Path(file_path).expanduser()
+        source = texflow.resolve_path(file_path)
         
         if not source.exists():
             return {"success": False, "error": f"File not found: {source}"}
@@ -92,7 +93,7 @@ class DocumentManager:
         Returns:
             List of archived documents with metadata
         """
-        dir_path = Path(directory).expanduser()
+        dir_path = texflow.resolve_path(directory)
         archive_dir = dir_path / self.ARCHIVE_DIR
         
         if not archive_dir.exists():
@@ -149,7 +150,7 @@ class DocumentManager:
         Returns:
             Dict with restore details
         """
-        source = Path(archive_path).expanduser()
+        source = texflow.resolve_path(archive_path)
         
         if not source.exists():
             return {"success": False, "error": f"Archive not found: {source}"}
@@ -168,7 +169,7 @@ class DocumentManager:
         
         # Determine restore path
         if restore_path:
-            dest = Path(restore_path).expanduser()
+            dest = texflow.resolve_path(restore_path)
         elif original_path:
             dest = Path(original_path)
         else:
@@ -220,7 +221,7 @@ class DocumentManager:
         Returns:
             Summary of archived files
         """
-        dir_path = Path(directory).expanduser()
+        dir_path = texflow.resolve_path(directory)
         
         if not dir_path.exists():
             return {"success": False, "error": f"Directory not found: {directory}"}
@@ -253,7 +254,7 @@ class DocumentManager:
         Returns:
             List of all versions found
         """
-        dir_path = Path(directory).expanduser()
+        dir_path = texflow.resolve_path(directory)
         base_name = Path(filename).stem
         
         versions = []
