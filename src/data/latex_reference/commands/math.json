@@ -1,0 +1,105 @@
+{
+  "\\frac": {
+    "syntax": "\\frac{numerator}{denominator}",
+    "description": "Produces a fraction",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\frac{1}{2}",
+      "\\frac{x+1}{x-1}",
+      "\\frac{\\partial f}{\\partial x}"
+    ],
+    "related": ["\\dfrac", "\\tfrac", "\\cfrac"]
+  },
+  "\\sqrt": {
+    "syntax": "\\sqrt[n]{expression}",
+    "description": "Square root or nth root",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\sqrt{2}",
+      "\\sqrt[3]{8}",
+      "\\sqrt{x^2 + y^2}"
+    ],
+    "related": ["\\surd"]
+  },
+  "\\sum": {
+    "syntax": "\\sum_{lower}^{upper}",
+    "description": "Summation symbol",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\sum_{i=1}^{n} i",
+      "\\sum_{k=0}^{\\infty} \\frac{1}{k!}"
+    ],
+    "related": ["\\prod", "\\int", "\\bigcup", "\\bigcap"]
+  },
+  "\\int": {
+    "syntax": "\\int_{lower}^{upper}",
+    "description": "Integral symbol",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\int_0^1 x^2 dx",
+      "\\int_{-\\infty}^{\\infty} e^{-x^2} dx"
+    ],
+    "related": ["\\iint", "\\iiint", "\\oint", "\\sum"]
+  },
+  "\\lim": {
+    "syntax": "\\lim_{variable \\to value}",
+    "description": "Limit operator",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\lim_{x \\to 0} \\frac{\\sin x}{x}",
+      "\\lim_{n \\to \\infty} \\left(1 + \\frac{1}{n}\\right)^n"
+    ],
+    "related": ["\\limsup", "\\liminf"]
+  },
+  "\\sin": {
+    "syntax": "\\sin",
+    "description": "Sine function",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\sin x",
+      "\\sin(2\\pi t)",
+      "\\sin^2 \\theta"
+    ],
+    "related": ["\\cos", "\\tan", "\\arcsin"]
+  },
+  "\\cos": {
+    "syntax": "\\cos",
+    "description": "Cosine function",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\cos x",
+      "\\cos(\\omega t + \\phi)"
+    ],
+    "related": ["\\sin", "\\tan", "\\arccos"]
+  },
+  "\\log": {
+    "syntax": "\\log",
+    "description": "Logarithm function",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\log x",
+      "\\log_2 n",
+      "\\log_{10} 1000"
+    ],
+    "related": ["\\ln", "\\lg", "\\exp"]
+  },
+  "\\ln": {
+    "syntax": "\\ln",
+    "description": "Natural logarithm",
+    "package": "built-in",
+    "category": "math",
+    "examples": [
+      "\\ln x",
+      "\\ln(x+1)"
+    ],
+    "related": ["\\log", "\\exp"]
+  }
+}

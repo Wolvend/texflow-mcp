@@ -1,0 +1,184 @@
+{
+  "≈": {
+    "command": "\\approx",
+    "description": "Approximately equal to",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2248"
+  },
+  "≠": {
+    "command": "\\neq",
+    "description": "Not equal to",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2260"
+  },
+  "≤": {
+    "command": "\\leq",
+    "description": "Less than or equal to",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2264"
+  },
+  "≥": {
+    "command": "\\geq",
+    "description": "Greater than or equal to",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2265"
+  },
+  "∞": {
+    "command": "\\infty",
+    "description": "Infinity",
+    "package": "built-in",
+    "category": "misc",
+    "unicode": "U+221E"
+  },
+  "∈": {
+    "command": "\\in",
+    "description": "Element of",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2208"
+  },
+  "∉": {
+    "command": "\\notin",
+    "description": "Not an element of",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2209"
+  },
+  "⊂": {
+    "command": "\\subset",
+    "description": "Subset of",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2282"
+  },
+  "⊆": {
+    "command": "\\subseteq",
+    "description": "Subset of or equal to",
+    "package": "built-in",
+    "category": "relation",
+    "unicode": "U+2286"
+  },
+  "∪": {
+    "command": "\\cup",
+    "description": "Union",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+222A"
+  },
+  "∩": {
+    "command": "\\cap",
+    "description": "Intersection",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+2229"
+  },
+  "∅": {
+    "command": "\\emptyset",
+    "description": "Empty set",
+    "package": "built-in",
+    "category": "misc",
+    "unicode": "U+2205"
+  },
+  "∂": {
+    "command": "\\partial",
+    "description": "Partial derivative",
+    "package": "built-in",
+    "category": "misc",
+    "unicode": "U+2202"
+  },
+  "∇": {
+    "command": "\\nabla",
+    "description": "Nabla (gradient)",
+    "package": "built-in",
+    "category": "misc",
+    "unicode": "U+2207"
+  },
+  "±": {
+    "command": "\\pm",
+    "description": "Plus or minus",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+00B1"
+  },
+  "∓": {
+    "command": "\\mp",
+    "description": "Minus or plus",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+2213"
+  },
+  "×": {
+    "command": "\\times",
+    "description": "Multiplication sign",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+00D7"
+  },
+  "÷": {
+    "command": "\\div",
+    "description": "Division sign",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+00F7"
+  },
+  "⊕": {
+    "command": "\\oplus",
+    "description": "Direct sum",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+2295"
+  },
+  "⊗": {
+    "command": "\\otimes",
+    "description": "Tensor product",
+    "package": "built-in",
+    "category": "binary",
+    "unicode": "U+2297"
+  },
+  "→": {
+    "command": "\\rightarrow",
+    "description": "Right arrow",
+    "package": "built-in",
+    "category": "arrow",
+    "unicode": "U+2192"
+  },
+  "←": {
+    "command": "\\leftarrow",
+    "description": "Left arrow",
+    "package": "built-in",
+    "category": "arrow",
+    "unicode": "U+2190"
+  },
+  "⇒": {
+    "command": "\\Rightarrow",
+    "description": "Right double arrow (implies)",
+    "package": "built-in",
+    "category": "arrow",
+    "unicode": "U+21D2"
+  },
+  "⇔": {
+    "command": "\\Leftrightarrow",
+    "description": "Left-right double arrow (if and only if)",
+    "package": "built-in",
+    "category": "arrow",
+    "unicode": "U+21D4"
+  },
+  "∴": {
+    "command": "\\therefore",
+    "description": "Therefore",
+    "package": "amssymb",
+    "category": "misc",
+    "unicode": "U+2234"
+  },
+  "∵": {
+    "command": "\\because",
+    "description": "Because",
+    "package": "amssymb",
+    "category": "misc",
+    "unicode": "U+2235"
+  }
+}

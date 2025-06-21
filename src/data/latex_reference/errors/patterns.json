@@ -1,0 +1,113 @@
+{
+  "Undefined control sequence": {
+    "explanation": "LaTeX doesn't recognize a command you've used",
+    "solution": "Check spelling, ensure required package is loaded, or define the command",
+    "example": "If \\citep is undefined, add \\usepackage{natbib}",
+    "common_causes": [
+      "Typo in command name (\\ciet instead of \\cite)",
+      "Missing \\usepackage{} declaration",
+      "Command from a package that isn't loaded",
+      "Custom command that hasn't been defined with \\newcommand"
+    ]
+  },
+  "Missing \\$ inserted": {
+    "explanation": "Math mode content found outside math environment",
+    "solution": "Wrap math content in $ ... $ for inline or \\[ ... \\] for display",
+    "example": "Change: x^2 + y^2 = z^2\nTo: $x^2 + y^2 = z^2$",
+    "common_causes": [
+      "Using ^ or _ outside math mode",
+      "Math commands like \\frac outside math mode",
+      "Forgetting to close a math environment",
+      "Using math symbols without dollar signs"
+    ]
+  },
+  "File .* not found": {
+    "explanation": "LaTeX cannot find a required file",
+    "solution": "Check file path, ensure file exists, or install missing package",
+    "example": "If article.cls not found, your TeX installation may be incomplete",
+    "common_causes": [
+      "Incorrect file path in \\input or \\include",
+      "Missing image file for \\includegraphics",
+      "Package not installed on system",
+      "Typo in filename",
+      "Wrong file extension"
+    ]
+  },
+  "LaTeX Error: \\\\begin\\{.*\\} on input line .* ended by \\\\end\\{.*\\}": {
+    "explanation": "Mismatched environment begin/end tags",
+    "solution": "Ensure every \\begin{env} has a matching \\end{env}",
+    "example": "\\begin{equation} must end with \\end{equation}, not \\end{align}",
+    "common_causes": [
+      "Typo in environment name",
+      "Forgetting to close an environment",
+      "Nesting environments incorrectly",
+      "Copy-paste errors"
+    ]
+  },
+  "Runaway argument": {
+    "explanation": "LaTeX couldn't find the expected closing delimiter",
+    "solution": "Check for missing closing braces }, brackets ], or other delimiters",
+    "example": "\\frac{1 is missing the closing }",
+    "common_causes": [
+      "Missing closing brace }",
+      "Missing closing bracket ]",
+      "Unmatched delimiters in math mode",
+      "Missing \\\\ at end of table row"
+    ]
+  },
+  "Package .* Error": {
+    "explanation": "A LaTeX package encountered an error",
+    "solution": "Check package documentation for specific requirements",
+    "example": "babel package errors often relate to language settings",
+    "common_causes": [
+      "Incompatible package options",
+      "Missing package dependencies",
+      "Outdated package version",
+      "Conflicting packages loaded"
+    ]
+  },
+  "Dimension too large": {
+    "explanation": "A dimension exceeds TeX's maximum allowed value",
+    "solution": "Reduce the size or scale of the problematic element",
+    "example": "Images that are too large should be scaled: \\includegraphics[width=0.8\\textwidth]{image}",
+    "common_causes": [
+      "Image dimensions too large",
+      "Accumulated spacing exceeds page size",
+      "Infinite loops in calculations",
+      "Recursive macros"
+    ]
+  },
+  "Extra alignment tab has been changed to \\\\cr": {
+    "explanation": "Too many & symbols in a table or align environment",
+    "solution": "Check that number of & symbols matches number of columns",
+    "example": "In {tabular}{cc}, each row should have at most one &",
+    "common_causes": [
+      "Extra & at end of row",
+      "More columns in data than in column specification",
+      "Misunderstanding of column syntax",
+      "Copy-paste errors in tables"
+    ]
+  },
+  "Missing number, treated as zero": {
+    "explanation": "LaTeX expected a number but found something else",
+    "solution": "Provide a valid number or dimension where required",
+    "example": "\\vspace{} needs a dimension like \\vspace{1cm}",
+    "common_causes": [
+      "Empty dimension argument",
+      "Missing units (cm, pt, em, etc.)",
+      "Variable not defined",
+      "Syntax error in calculation"
+    ]
+  },
+  "Paragraph ended before .* was complete": {
+    "explanation": "A blank line appeared where LaTeX didn't expect one",
+    "solution": "Remove blank lines from command arguments",
+    "example": "Don't put blank lines inside \\section{} or other commands",
+    "common_causes": [
+      "Blank line in command argument",
+      "Blank line in math mode",
+      "Missing closing delimiter",
+      "Incorrect paragraph formatting"
+    ]
+  }
+}

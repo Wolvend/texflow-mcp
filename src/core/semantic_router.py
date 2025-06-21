@@ -66,8 +66,14 @@ class SemanticRouter:
         params = self._preprocess_params(operation, action, params)
         
         try:
+            # Add project context from texflow SESSION_CONTEXT
+            import texflow
+            context = self.current_context.copy()
+            context["project"] = texflow.SESSION_CONTEXT.get("current_project")
+            context["workspace_root"] = texflow.SESSION_CONTEXT.get("workspace_root")
+            
             # Execute operation
-            result = handler.execute(action, params, self.current_context)
+            result = handler.execute(action, params, context)
             
             # Post-process result
             result = self._postprocess_result(operation, action, result)
@@ -236,6 +242,25 @@ class SemanticRouter:
                     {"description": "View next page", "command": "document(action='inspect', path='filename.pdf', page=2)"}
                 ]
             }
+        
+        # Add reference hints for validation errors
+        if operation == "document" and action == "validate" and not result.get("success"):
+            if "error" in result:
+                result["workflow"] = {
+                    "message": "Validation failed - check the reference for help",
+                    "suggested_next": [
+                        {"description": "Get help for this error", "command": f"reference(action='error_help', error='{result['error'][:100]}...')"},
+                        {"description": "Search for related commands", "command": "reference(action='search', query='command_name')"}
+                    ]
+                }
+        
+        # Hint when creating LaTeX documents
+        if operation == "document" and action == "create" and result.get("format") == "latex":
+            if "workflow" in result:
+                result["workflow"]["suggested_next"].append({
+                    "description": "Get LaTeX help and examples",
+                    "command": "reference(action='search', query='topic')"
+                })
         
         # Add warning for documents created outside projects
         if operation == "document" and action == "create" and params.get("_outside_project"):

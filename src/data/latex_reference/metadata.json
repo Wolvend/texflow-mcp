@@ -1,0 +1,22 @@
+{
+  "version": "0.1.0",
+  "last_updated": "2025-01-21",
+  "sources": {
+    "latex2e-help-texinfo": {
+      "version": "2024.05",
+      "license": "GFDL",
+      "url": "https://latexref.xyz/"
+    },
+    "comprehensive-symbol-list": {
+      "version": "14.0",
+      "license": "LPPL",
+      "url": "https://ctan.org/pkg/comprehensive"
+    },
+    "unicode-math": {
+      "version": "0.8q",
+      "license": "LPPL",
+      "url": "https://ctan.org/pkg/unicode-math"
+    }
+  },
+  "description": "LaTeX reference data for TeXFlow MCP server"
+}

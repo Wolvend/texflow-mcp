@@ -1,0 +1,76 @@
+{
+  "\\part": {
+    "syntax": "\\part[short-title]{title}",
+    "description": "Start a new part (highest level of sectioning in books)",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\part{Introduction}",
+      "\\part[Intro]{Introduction to the Subject}"
+    ],
+    "related": ["\\chapter", "\\section"]
+  },
+  "\\chapter": {
+    "syntax": "\\chapter[short-title]{title}",
+    "description": "Start a new chapter (books and reports only)",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\chapter{Background}",
+      "\\chapter[Theory]{Theoretical Foundation}"
+    ],
+    "related": ["\\section", "\\part"]
+  },
+  "\\section": {
+    "syntax": "\\section[short-title]{title}",
+    "description": "Start a new section",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\section{Introduction}",
+      "\\section[Methods]{Research Methods}"
+    ],
+    "related": ["\\subsection", "\\chapter", "\\paragraph"]
+  },
+  "\\subsection": {
+    "syntax": "\\subsection[short-title]{title}",
+    "description": "Start a new subsection",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\subsection{Data Collection}",
+      "\\subsection[Analysis]{Statistical Analysis}"
+    ],
+    "related": ["\\section", "\\subsubsection"]
+  },
+  "\\subsubsection": {
+    "syntax": "\\subsubsection[short-title]{title}",
+    "description": "Start a new subsubsection",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\subsubsection{Preliminary Results}"
+    ],
+    "related": ["\\subsection", "\\paragraph"]
+  },
+  "\\paragraph": {
+    "syntax": "\\paragraph[short-title]{title}",
+    "description": "Start a titled paragraph",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\paragraph{Note:} This is important."
+    ],
+    "related": ["\\subparagraph", "\\subsubsection"]
+  },
+  "\\subparagraph": {
+    "syntax": "\\subparagraph[short-title]{title}",
+    "description": "Start a titled subparagraph",
+    "package": "built-in",
+    "category": "sectioning",
+    "examples": [
+      "\\subparagraph{Detail:} Further explanation."
+    ],
+    "related": ["\\paragraph"]
+  }
+}

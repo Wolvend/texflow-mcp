@@ -8,7 +8,7 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 
 ### Unified Semantic Server (`texflow_unified.py`)
 - Single entry point that routes all operations through the semantic layer
-- Exposes all 8 semantic tools:
+- Exposes all 9 semantic tools:
   - **document**: Create, read, edit, convert, validate documents
   - **output**: Export to various formats (PDF, DOCX, etc.) and print
   - **project**: Manage document projects with organized structure
@@ -17,7 +17,8 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
   - **printer**: Manage CUPS printers and settings
   - **workflow**: Get task-specific guidance
   - **templates**: Manage document templates
-- Exposes 8 MCP resources:
+  - **reference**: LaTeX documentation search and help (commands, symbols, errors)
+- Exposes 9 MCP resources:
   - **System Monitoring**:
     - **system-dependencies://status**: Complete dependency status as JSON (includes discovered packages)
     - **system-dependencies://summary**: Human-readable dependency summary
@@ -28,6 +29,7 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
     - **texflow://templates**: Browse available document templates
     - **texflow://recent-documents**: Recent documents across projects
     - **texflow://workflow-guide**: Context-aware workflow guidance
+    - **texflow://latex-reference**: LaTeX reference database statistics and search tips
 
 ### Semantic Layer (`src/`)
 - **Core Components**:
@@ -86,13 +88,26 @@ The system automatically detects available tools, reports versions, and provides
 
 The last argument is the workspace root where all TeXFlow projects will be stored. You can also use the `TEXFLOW_WORKSPACE` environment variable instead.
 
+## Recent Enhancements
+
+- **LaTeX Reference Tool**: New `reference` tool provides instant access to LaTeX documentation:
+  - Search 5900+ commands and symbols
+  - Get package documentation and examples
+  - Decode error messages with solutions
+  - Check documents for style best practices
+  - Find symbols by description (e.g., "approximately equal" → \approx)
+- **Flexible Conversion**: The document conversion tool now works without requiring an active project
+- **Any-to-Any Format Support**: Expanded conversion capabilities using pandoc
+- **Atomic Operations**: Clear hints when performing conversions outside of projects
+- **Extended Format Support**: Input formats include markdown, latex, html, docx, odt, rtf, epub, mediawiki, rst
+
 ## Pending Enhancements
 
-All 8 semantic tools are now exposed. Future enhancements:
-- **Semantic layer integration**: printer, discover, workflow, and templates currently use original implementation
-- **Document references**: Simple aliasing system for easier document access
-- **Recent documents**: Track and display recently modified documents across projects
-- **Enhanced discovery**: Better search capabilities within projects
+All 9 semantic tools are now exposed. Future enhancements:
+- **Expanded reference data**: Add more LaTeX packages, symbols, and examples
+- **Build-time data generation**: Automated extraction from latex2e-help-texinfo and symbol lists
+- **Context-aware help**: Auto-suggest relevant documentation during editing
+- **Visual symbol search**: Render symbols as images for easier identification
 
 ## Key Design Decisions
 

@@ -20,6 +20,7 @@ from .features.printer import PrinterOperation
 from .features.discover import DiscoverOperation
 from .features.workflow import WorkflowOperation
 from .features.templates import TemplatesOperation
+from .features.reference import ReferenceOperation
 
 
 class TeXFlowSemantic:
@@ -100,6 +101,11 @@ class TeXFlowSemantic:
         templates_op = TemplatesOperation(self.texflow)
         self.registry.register("templates", templates_op)
         self.router.register_operation("templates", templates_op)
+        
+        # Reference operation (LaTeX documentation)
+        reference_op = ReferenceOperation()
+        self.registry.register("reference", reference_op)
+        self.router.register_operation("reference", reference_op)
     
     def execute(self, operation: str, action: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
         """

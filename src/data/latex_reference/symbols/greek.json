@@ -1,0 +1,149 @@
+{
+  "α": {
+    "command": "\\alpha",
+    "description": "Greek letter alpha (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B1"
+  },
+  "β": {
+    "command": "\\beta",
+    "description": "Greek letter beta (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B2"
+  },
+  "γ": {
+    "command": "\\gamma",
+    "description": "Greek letter gamma (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B3"
+  },
+  "Γ": {
+    "command": "\\Gamma",
+    "description": "Greek letter gamma (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+0393"
+  },
+  "δ": {
+    "command": "\\delta",
+    "description": "Greek letter delta (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B4"
+  },
+  "Δ": {
+    "command": "\\Delta",
+    "description": "Greek letter delta (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+0394"
+  },
+  "ε": {
+    "command": "\\epsilon",
+    "description": "Greek letter epsilon (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B5"
+  },
+  "ε": {
+    "command": "\\varepsilon",
+    "description": "Greek letter epsilon variant (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B5"
+  },
+  "θ": {
+    "command": "\\theta",
+    "description": "Greek letter theta (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03B8"
+  },
+  "Θ": {
+    "command": "\\Theta",
+    "description": "Greek letter theta (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+0398"
+  },
+  "λ": {
+    "command": "\\lambda",
+    "description": "Greek letter lambda (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03BB"
+  },
+  "Λ": {
+    "command": "\\Lambda",
+    "description": "Greek letter lambda (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+039B"
+  },
+  "μ": {
+    "command": "\\mu",
+    "description": "Greek letter mu (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03BC"
+  },
+  "π": {
+    "command": "\\pi",
+    "description": "Greek letter pi (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03C0"
+  },
+  "Π": {
+    "command": "\\Pi",
+    "description": "Greek letter pi (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03A0"
+  },
+  "σ": {
+    "command": "\\sigma",
+    "description": "Greek letter sigma (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03C3"
+  },
+  "Σ": {
+    "command": "\\Sigma",
+    "description": "Greek letter sigma (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03A3"
+  },
+  "φ": {
+    "command": "\\phi",
+    "description": "Greek letter phi (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03C6"
+  },
+  "Φ": {
+    "command": "\\Phi",
+    "description": "Greek letter phi (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03A6"
+  },
+  "ω": {
+    "command": "\\omega",
+    "description": "Greek letter omega (lowercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03C9"
+  },
+  "Ω": {
+    "command": "\\Omega",
+    "description": "Greek letter omega (uppercase)",
+    "package": "built-in",
+    "category": "greek",
+    "unicode": "U+03A9"
+  }
+}

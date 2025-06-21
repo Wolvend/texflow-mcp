@@ -189,10 +189,18 @@ def document(
     - create: Create new document (auto-detects format from content/intent)
     - read: Read document with line numbers
     - edit: Make targeted edits with conflict detection
-    - convert: Transform between formats (e.g., markdown→latex)
+    - convert: Transform between formats (works without active project)
     - validate: Check syntax and structure
     - status: Check for external modifications
     - inspect: Inspect PDF page by rendering to base64 PNG image
+    
+    CONVERT ACTION - Supported Formats:
+    - Input: markdown (.md), latex (.tex), html (.html), docx (.docx), 
+             odt (.odt), rtf (.rtf), epub (.epub), mediawiki, rst (.rst)
+    - Output: markdown, latex, pdf, html, docx, odt, rtf, epub, mediawiki, rst
+    - Note: PDF output requires LaTeX engine (xelatex or pdflatex)
+    - Usage: document(action='convert', source='file.md', target_format='pdf')
+    - Works as atomic operation without project or within project structure
     """
     params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
     
@@ -426,6 +434,44 @@ def templates(
         params["content"] = content
     
     result = semantic.execute("templates", action, params)
+    return format_semantic_result(result)
+
+
+@mcp.tool()
+def reference(
+    action: str,
+    query: Optional[str] = None,
+    description: Optional[str] = None,
+    name: Optional[str] = None,
+    path: Optional[str] = None,
+    error: Optional[str] = None,
+    topic: Optional[str] = None
+) -> str:
+    """LaTeX reference and documentation search - get help with commands, symbols, and errors.
+    
+    FEATURES:
+    - Search 5900+ LaTeX commands and symbols
+    - Get package documentation and usage examples
+    - Decode error messages with solutions
+    - Check document style for best practices
+    - Find symbols by description (e.g., "approximately equal")
+    
+    Actions:
+    - search: Search for LaTeX commands or general topics
+    - symbol: Find symbols by description (e.g., "approximately equal")  
+    - package: Get information about a LaTeX package
+    - check_style: Analyze document for LaTeX best practices
+    - error_help: Get help for LaTeX error messages
+    - example: Get working examples for a topic
+    
+    Examples:
+    - reference(action='search', query='tables')
+    - reference(action='symbol', description='approximately equal')
+    - reference(action='package', name='amsmath')
+    - reference(action='error_help', error='Undefined control sequence')
+    """
+    params = {k: v for k, v in locals().items() if v is not None and k != 'action'}
+    result = semantic.execute("reference", action, params)
     return format_semantic_result(result)
 
 
@@ -788,6 +834,52 @@ def get_workflow_guide() -> str:
         
     except Exception as e:
         return f"❌ Error generating workflow guide: {str(e)}"
+
+
+@mcp.resource("texflow://latex-reference")
+def get_latex_reference_info() -> str:
+    """Get information about the LaTeX reference database."""
+    try:
+        # Get metadata about the reference database
+        from src.features.reference import ReferenceOperation
+        ref_op = ReferenceOperation()
+        
+        # Count items in each category
+        command_count = len(ref_op.commands_db)
+        symbol_count = len(ref_op.symbols_db)
+        package_count = len(ref_op.packages_db)
+        error_count = len(ref_op.errors_db)
+        
+        lines = [
+            "📚 LaTeX Reference Database",
+            "=" * 40,
+            "",
+            f"📊 Database Statistics:",
+            f"  • Commands: {command_count} documented",
+            f"  • Symbols: {symbol_count} with descriptions",
+            f"  • Packages: {package_count} with documentation",
+            f"  • Error patterns: {error_count} with solutions",
+            "",
+            "🔍 Search Examples:",
+            "  → Find commands: reference(action='search', query='section')",
+            "  → Find symbols: reference(action='symbol', description='approximately')",
+            "  → Package help: reference(action='package', name='amsmath')",
+            "  → Error help: reference(action='error_help', error='undefined control')",
+            "",
+            "📝 Document Analysis:",
+            "  → Check style: reference(action='check_style', path='document.tex')",
+            "  → Get examples: reference(action='example', topic='table')",
+            "",
+            "💡 Tips:",
+            "  • Use descriptive searches for symbols (e.g., 'not equal', 'infinity')",
+            "  • Error help works with partial error messages",
+            "  • Style checking identifies deprecated commands and best practices"
+        ]
+        
+        return "\n".join(lines)
+        
+    except Exception as e:
+        return f"❌ Error accessing reference database: {str(e)}"
 
 
 def main():

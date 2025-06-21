@@ -1,0 +1,89 @@
+{
+  "name": "amsmath",
+  "description": "Enhanced mathematical typesetting from the American Mathematical Society",
+  "usage": "\\usepackage{amsmath}",
+  "options": [
+    {
+      "name": "centertags",
+      "description": "Center equation numbers vertically"
+    },
+    {
+      "name": "tbtags",
+      "description": "Position equation numbers level with first/last line"
+    },
+    {
+      "name": "sumlimits",
+      "description": "Place limits above/below sum symbols"
+    },
+    {
+      "name": "nosumlimits",
+      "description": "Place limits to the side of sum symbols"
+    },
+    {
+      "name": "intlimits",
+      "description": "Place limits above/below integral symbols"
+    },
+    {
+      "name": "nointlimits",
+      "description": "Place limits to the side of integral symbols"
+    }
+  ],
+  "commands": [
+    {
+      "name": "\\text",
+      "syntax": "\\text{text}",
+      "description": "Text mode within math mode"
+    },
+    {
+      "name": "\\dfrac",
+      "syntax": "\\dfrac{num}{den}",
+      "description": "Display-style fraction"
+    },
+    {
+      "name": "\\tfrac",
+      "syntax": "\\tfrac{num}{den}",
+      "description": "Text-style fraction"
+    },
+    {
+      "name": "\\binom",
+      "syntax": "\\binom{n}{k}",
+      "description": "Binomial coefficient"
+    },
+    {
+      "name": "\\pmatrix",
+      "syntax": "\\begin{pmatrix} ... \\end{pmatrix}",
+      "description": "Matrix with parentheses"
+    },
+    {
+      "name": "\\bmatrix",
+      "syntax": "\\begin{bmatrix} ... \\end{bmatrix}",
+      "description": "Matrix with square brackets"
+    },
+    {
+      "name": "\\vmatrix",
+      "syntax": "\\begin{vmatrix} ... \\end{vmatrix}",
+      "description": "Matrix with vertical bars (determinant)"
+    },
+    {
+      "name": "\\align",
+      "syntax": "\\begin{align} ... \\end{align}",
+      "description": "Aligned equations environment"
+    },
+    {
+      "name": "\\gather",
+      "syntax": "\\begin{gather} ... \\end{gather}",
+      "description": "Centered equations environment"
+    },
+    {
+      "name": "\\split",
+      "syntax": "\\begin{split} ... \\end{split}",
+      "description": "Split long equations"
+    }
+  ],
+  "examples": [
+    "\\begin{align}\nf(x) &= x^2 + 2x + 1 \\\\\n&= (x + 1)^2\n\\end{align}",
+    "\\begin{pmatrix}\na & b \\\\\nc & d\n\\end{pmatrix}",
+    "\\text{if } x > 0 \\text{ then } f(x) = \\sqrt{x}"
+  ],
+  "documentation": "texdoc amsmath"
+}
