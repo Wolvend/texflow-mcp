@@ -682,7 +682,7 @@ Add to your Claude Desktop config:
   "mcpServers": {
     "texflow": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/aaronsb/texflow-mcp.git", "texflow", "/path/to/your/documents"]
+      "args": ["--from", "git+https://github.com/aaronsb/texflow-mcp.git", "texflow", "/home/aaron/Documents/TeXFlow"]
     }
   }
 }
@@ -691,11 +691,8 @@ Add to your Claude Desktop config:
 Or use the Claude CLI:
 
 ```bash
-# Add with user scope (recommended)
-claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow /path/to/your/documents
-
-# Example with specific workspace
-claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow ~/Documents/TeXFlow
+# Add with user scope (recommended)  
+claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow /home/aaron/Documents/TeXFlow
 ```
 
 ### Method 2: Run from local directory
@@ -707,7 +704,7 @@ If you've cloned the repository:
   "mcpServers": {
     "texflow": {
       "command": "uv",
-      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow", "/path/to/your/documents"]
+      "args": ["--directory", "/home/aaron/Projects/ai/mcp/texflow-mcp", "run", "texflow", "/home/aaron/Documents/TeXFlow"]
     }
   }
 }
@@ -717,13 +714,13 @@ Or with Claude CLI:
 
 ```bash
 # Add with user scope
-claude mcp add --scope user texflow uv -- --directory /path/to/texflow-mcp run texflow /path/to/your/documents
+claude mcp add --scope user texflow uv -- --directory /home/aaron/Projects/ai/mcp/texflow-mcp run texflow /home/aaron/Documents/TeXFlow
 ```
 
 ### Workspace Path Options
 
-1. **Command line argument**: `/path/to/your/documents` as shown above
-2. **Environment variable**: Set `TEXFLOW_WORKSPACE=/path/to/your/documents`
+1. **Command line argument**: `/home/aaron/Documents/TeXFlow` as shown above
+2. **Environment variable**: Set `TEXFLOW_WORKSPACE=/home/aaron/Documents/TeXFlow`
 3. **Default**: If neither is provided, defaults to `~/Documents/TeXFlow`
 
 All TeXFlow projects and documents will be created within this workspace directory.
