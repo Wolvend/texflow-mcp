@@ -56,6 +56,14 @@ TeXFlow is a semantic document authoring MCP server that provides intelligent wo
 5. **Update MCP**: After changes, restart Claude Desktop to test
 6. **Use MCP Inspector**: For interactive testing of individual tools
 
+## Documentation
+
+- **[TEXFLOW_REFERENCE.md](docs/TEXFLOW_REFERENCE.md)**: Complete reference guide for all 9 semantic tools
+- **[SYSTEM_DEPENDENCIES.md](docs/SYSTEM_DEPENDENCIES.md)**: System requirements and dependency management
+- **[LATEX_REFERENCE_DESIGN.md](docs/LATEX_REFERENCE_DESIGN.md)**: Design doc for the LaTeX reference tool
+- **[COMPLETE_WORKFLOW_EXAMPLE.md](docs/COMPLETE_WORKFLOW_EXAMPLE.md)**: End-to-end workflow examples
+- **[RECIPE_BOOK_EXAMPLE.md](docs/RECIPE_BOOK_EXAMPLE.md)**: Practical example creating a recipe book
+
 ## System Dependencies
 
 TeXFlow includes dynamic dependency checking with automatic status reporting via MCP resources. Dependencies are categorized as:
