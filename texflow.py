@@ -283,7 +283,9 @@ def document(
     - create: Create new document (auto-detects format from content/intent)
     - read: Read document with line numbers
     - edit: Make targeted edits with conflict detection
-    - convert: Transform between formats (e.g., markdown→latex)
+    - convert: Transform between formats (supports any-to-any within pandoc capabilities)
+      Supported input: .md, .tex, .html, .docx, .odt, .rtf, .epub, .rst
+      Supported output: markdown, latex, pdf, html, docx, odt, rtf, epub, mediawiki, rst
     - validate: Check syntax and structure
     - status: Check for external modifications
     """

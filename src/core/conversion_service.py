@@ -54,24 +54,43 @@ class ConversionService:
             extension = '.tex' if target_format == 'latex' else f'.{target_format}'
             output_path = source.with_suffix(extension)
         
-        # Route to appropriate converter
-        converters = {
+        # Store original format for later use
+        original_format = source_format
+        
+        # Normalize source format for internal routing
+        if source_format == 'markdown':
+            source_format = 'md'
+        elif source_format == 'latex':
+            source_format = 'tex'
+            
+        # Route to appropriate converter - expanded support
+        direct_converters = {
             ('md', 'latex'): self.markdown_to_latex,
+            ('md', 'tex'): self.markdown_to_latex,
             ('md', 'pdf'): self.markdown_to_pdf,
-            ('markdown', 'latex'): self.markdown_to_latex,
-            ('markdown', 'pdf'): self.markdown_to_pdf,
             ('tex', 'pdf'): self.latex_to_pdf,
             ('latex', 'pdf'): self.latex_to_pdf,
         }
         
         converter_key = (source_format, target_format)
-        if converter_key in converters:
-            return converters[converter_key](source, output_path)
+        
+        # Check for direct converter first
+        if converter_key in direct_converters:
+            return direct_converters[converter_key](source, output_path)
+        
+        # Try generic pandoc conversion for other formats
+        elif self.pandoc_available:
+            # Use original format names for pandoc (it expects 'markdown' not 'md')
+            pandoc_source_format = original_format
+            if pandoc_source_format in ['md', 'tex']:
+                pandoc_source_format = 'markdown' if pandoc_source_format == 'md' else 'latex'
+            return self.pandoc_convert(source, output_path, pandoc_source_format, target_format)
         else:
             return {
                 "success": False,
-                "error": f"Conversion from {source_format} to {target_format} not supported",
-                "supported_conversions": list(converters.keys())
+                "error": f"Conversion from {source_format} to {target_format} requires pandoc",
+                "install_hint": "Install pandoc for extended format support: sudo apt install pandoc",
+                "supported_formats": ["markdown", "latex", "pdf", "html", "docx", "odt", "rtf", "epub", "mediawiki", "rst"]
             }
     
     def markdown_to_latex(self, source_path: Path, output_path: Path) -> Dict[str, Any]:
@@ -255,6 +274,66 @@ class ConversionService:
                 "success": False,
                 "error": f"PDF generation failed: {e}",
                 "stderr": e.stderr if hasattr(e, 'stderr') else None
+            }
+    
+    def pandoc_convert(self, source_path: Path, output_path: Path, source_format: str, target_format: str) -> Dict[str, Any]:
+        """Generic pandoc conversion for any supported format."""
+        try:
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Build pandoc command
+            cmd = [
+                "pandoc",
+                "-f", source_format,
+                "-t", target_format,
+                "-o", str(output_path),
+                str(source_path)
+            ]
+            
+            # Add standalone flag for document formats
+            if target_format in ['latex', 'tex', 'html', 'epub']:
+                cmd.insert(3, "-s")  # Insert after -t target_format
+            
+            # Special handling for PDF output
+            if target_format == 'pdf':
+                # Determine PDF engine
+                if self.xelatex_available:
+                    cmd.extend(["--pdf-engine=xelatex"])
+                elif self.pdflatex_available:
+                    cmd.extend(["--pdf-engine=pdflatex"])
+                else:
+                    return {
+                        "success": False,
+                        "error": "PDF conversion requires a LaTeX engine (xelatex or pdflatex)",
+                        "install_hint": "Install TeX Live: sudo apt install texlive-xetex"
+                    }
+            
+            # Execute conversion
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "source": str(source_path),
+                    "output": str(output_path),
+                    "source_format": source_format,
+                    "target_format": target_format,
+                    "message": f"Successfully converted {source_format} to {target_format}: {output_path}",
+                    "converter": "pandoc"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Pandoc conversion failed: {result.stderr}",
+                    "stdout": result.stdout,
+                    "command": ' '.join(cmd)
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Conversion error: {str(e)}"
             }
     
     def _extract_latex_errors(self, output: str) -> list:

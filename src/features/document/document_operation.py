@@ -110,9 +110,15 @@ class DocumentOperation:
                     "notes": "Fallback strategy when string-based edits fail. Uses buffered content to avoid regeneration."
                 },
                 "convert": {
-                    "description": "Convert between formats",
+                    "description": "Convert between formats (supports any-to-any within pandoc capabilities)",
                     "required_params": ["source"],
-                    "optional_params": ["target_format", "output_path"]
+                    "optional_params": ["target_format", "output_path"],
+                    "supported_formats": {
+                        "input": ["markdown", "md", "latex", "tex", "html", "docx", "odt", "rtf", "epub", "mediawiki", "rst"],
+                        "output": ["markdown", "latex", "pdf", "html", "docx", "odt", "rtf", "epub", "mediawiki", "rst"],
+                        "note": "PDF output requires LaTeX engine (xelatex or pdflatex)"
+                    },
+                    "standalone_mode": "Works without active project - just provide file paths"
                 },
                 "validate": {
                     "description": "Validate document syntax",
@@ -360,32 +366,56 @@ class DocumentOperation:
             return {"error": "Source parameter is required"}
         
         try:
-            # Resolve paths
-            source_path = texflow.resolve_path(source)
+            # Check if we're in a project context
+            in_project = context.get("project") is not None
+            
+            # Resolve paths - allow absolute paths when not in project
+            source_path = texflow.resolve_path(source, use_project=in_project)
             if output_path:
-                output_path = texflow.resolve_path(output_path)
+                output_path = texflow.resolve_path(output_path, use_project=in_project)
             
             # Use core conversion service
             result = self.conversion_service.convert(source_path, target_format, output_path)
             
             # Add semantic enhancements on success
             if result.get("success"):
-                result["workflow"] = {
-                    "message": f"Document converted to {target_format} successfully",
-                    "next_steps": []
-                }
-                
-                # Add format-specific suggestions
-                if target_format == "latex":
-                    result["workflow"]["next_steps"].extend([
-                        {"action": "validate", "description": "Check LaTeX syntax before compiling"},
-                        {"action": "export", "description": "Generate PDF from LaTeX"}
-                    ])
-                elif target_format == "pdf":
-                    result["workflow"]["next_steps"].extend([
-                        {"action": "inspect", "description": "Preview the generated PDF"},
-                        {"action": "print", "description": "Send to printer"}
-                    ])
+                if not in_project:
+                    # When not in project, emphasize this is a single atomic operation
+                    result["workflow"] = {
+                        "message": f"✅ Atomic conversion completed: {source_path.name} → {target_format}",
+                        "context": "Single-file conversion (no active project)",
+                        "note": "This was a standalone conversion. For organized document workflows, consider working within a project.",
+                        "output_location": str(result.get("output", output_path)),
+                        "next_steps": []
+                    }
+                    
+                    # Add minimal next steps for atomic operations
+                    if target_format == "pdf":
+                        result["workflow"]["next_steps"].append(
+                            {"action": "inspect", "description": f"Preview: document(action='inspect', path='{result.get('output', 'output.pdf')}')"}
+                        )
+                    elif target_format in ["docx", "odt", "rtf"]:
+                        result["workflow"]["next_steps"].append(
+                            {"action": "info", "description": f"Output ready for external editing: {result.get('output', 'output.' + target_format)}"}
+                        )
+                else:
+                    # Normal project workflow hints
+                    result["workflow"] = {
+                        "message": f"Document converted to {target_format} successfully",
+                        "next_steps": []
+                    }
+                    
+                    # Add format-specific suggestions for project context
+                    if target_format == "latex":
+                        result["workflow"]["next_steps"].extend([
+                            {"action": "validate", "description": "Check LaTeX syntax before compiling"},
+                            {"action": "export", "description": "Generate PDF from LaTeX"}
+                        ])
+                    elif target_format == "pdf":
+                        result["workflow"]["next_steps"].extend([
+                            {"action": "inspect", "description": "Preview the generated PDF"},
+                            {"action": "print", "description": "Send to printer"}
+                        ])
                 
             return result
                 
@@ -406,7 +436,8 @@ class DocumentOperation:
             
             # Add semantic enhancements
             if result.get("success"):
-                # Use the validation service's message which includes format info
+                # Preserve the validation service's message which includes format info
+                # Keep the original message in the main result
                 result["workflow"] = {
                     "message": result.get("message", "Validation completed"),
                     "next_steps": []
