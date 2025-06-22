@@ -1,0 +1,73 @@
+{
+  "\\rowcolor": {
+    "package": "colortbl",
+    "description": "Color a table row",
+    "usage": "\\rowcolor{blue!20}"
+  },
+  "\\columncolor": {
+    "package": "colortbl",
+    "description": "Color a table column",
+    "usage": "\\columncolor{red!10}"
+  },
+  "\\cellcolor": {
+    "package": "colortbl",
+    "description": "Color a table cell",
+    "usage": "\\cellcolor{green!30}"
+  },
+  "\\toprule": {
+    "package": "booktabs",
+    "description": "Top rule for professional tables",
+    "usage": "\\toprule"
+  },
+  "\\midrule": {
+    "package": "booktabs",
+    "description": "Middle rule for professional tables",
+    "usage": "\\midrule"
+  },
+  "\\bottomrule": {
+    "package": "booktabs",
+    "description": "Bottom rule for professional tables",
+    "usage": "\\bottomrule"
+  },
+  "\\Tree": {
+    "package": "qtree",
+    "description": "Draw linguistic parse trees",
+    "usage": "\\Tree [.S [.NP ] [.VP ] ]",
+    "alternatives": ["forest", "tikz-qtree"]
+  },
+  "\\chemfig": {
+    "package": "chemfig",
+    "description": "Draw chemical structures",
+    "usage": "\\chemfig{*6(=-=-=-)}"
+  },
+  "\\ce": {
+    "package": "mhchem",
+    "description": "Chemical equations and formulas",
+    "usage": "\\ce{H2O}"
+  },
+  "\\circuitikz": {
+    "package": "circuitikz",
+    "description": "Circuit drawing environment",
+    "usage": "\\begin{circuitikz}...\\end{circuitikz}"
+  },
+  "\\lstset": {
+    "package": "listings",
+    "description": "Configure code listings",
+    "usage": "\\lstset{language=Python}"
+  },
+  "\\tcolorbox": {
+    "package": "tcolorbox",
+    "description": "Colored text boxes",
+    "usage": "\\begin{tcolorbox}...\\end{tcolorbox}"
+  },
+  "\\href": {
+    "package": "hyperref",
+    "description": "Create hyperlinks",
+    "usage": "\\href{url}{text}"
+  },
+  "\\includegraphics": {
+    "package": "graphicx",
+    "description": "Include images",
+    "usage": "\\includegraphics[width=0.8\\textwidth]{image.png}"
+  }
+}

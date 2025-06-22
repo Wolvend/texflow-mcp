@@ -1,0 +1,80 @@
+{
+  "colortbl": {
+    "name": "colortbl",
+    "description": "Color support for tables - row, column, and cell colors",
+    "usage": "\\usepackage{colortbl}",
+    "requires": ["array", "color"],
+    "commands": [
+      {
+        "name": "\\rowcolor",
+        "syntax": "\\rowcolor{color}",
+        "description": "Color an entire table row"
+      },
+      {
+        "name": "\\columncolor",
+        "syntax": "\\columncolor{color}",
+        "description": "Color an entire table column"
+      },
+      {
+        "name": "\\cellcolor",
+        "syntax": "\\cellcolor{color}",
+        "description": "Color a single table cell"
+      }
+    ],
+    "examples": [
+      "\\rowcolor{blue!20}",
+      "\\rowcolor{gray!30}"
+    ],
+    "common_errors": {
+      "undefined_rowcolor": "Add \\usepackage{colortbl} to preamble"
+    }
+  },
+  "qtree": {
+    "name": "qtree",
+    "description": "Simple tree drawing for linguistics",
+    "usage": "\\usepackage{qtree}",
+    "commands": [
+      {
+        "name": "\\Tree",
+        "syntax": "\\Tree [.S [.NP ] [.VP ] ]",
+        "description": "Draw a linguistic parse tree"
+      }
+    ],
+    "alternatives": ["forest", "tikz-qtree"],
+    "installation": {
+      "texlive": "tlmgr install qtree",
+      "miktex": "Install via MiKTeX Console"
+    }
+  },
+  "chemfig": {
+    "name": "chemfig",
+    "description": "Draw chemical structures",
+    "usage": "\\usepackage{chemfig}",
+    "commands": [
+      {
+        "name": "\\chemfig",
+        "syntax": "\\chemfig{structure}",
+        "description": "Draw a chemical structure"
+      }
+    ],
+    "examples": [
+      "\\chemfig{H-C(-[2]H)(-[6]H)-H}",
+      "\\chemfig{*6(=-=-=-)}"
+    ]
+  },
+  "circuitikz": {
+    "name": "circuitikz",
+    "description": "Draw electrical circuits",
+    "usage": "\\usepackage{circuitikz}",
+    "commands": [
+      {
+        "name": "circuitikz environment",
+        "syntax": "\\begin{circuitikz} ... \\end{circuitikz}",
+        "description": "Environment for drawing circuits"
+      }
+    ],
+    "examples": [
+      "\\draw (0,0) to[R=$R_1$] (2,0);"
+    ]
+  }
+}
