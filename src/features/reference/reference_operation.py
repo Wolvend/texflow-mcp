@@ -29,6 +29,12 @@ class ReferenceOperation:
     def __init__(self):
         # Get data directory relative to this file
         self.data_dir = Path(__file__).parent.parent.parent / "data" / "latex_reference"
+        
+        # Ensure data directory exists
+        if not self.data_dir.exists():
+            print(f"Warning: Reference data directory not found: {self.data_dir}")
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        
         self.commands_db = self._load_commands()
         self.symbols_db = self._load_symbols()
         self.packages_db = self._load_packages()
@@ -37,8 +43,15 @@ class ReferenceOperation:
     def _load_json_file(self, filepath: Path) -> Dict[str, Any]:
         """Load a JSON file, returning empty dict if not found."""
         if filepath.exists():
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Invalid JSON in {filepath}: {e}")
+                return {}
+            except Exception as e:
+                print(f"Warning: Error reading {filepath}: {e}")
+                return {}
         return {}
     
     def _load_commands(self) -> Dict[str, Any]:
@@ -469,4 +482,83 @@ E = mc^2
             "topic": topic,
             "examples": matches,
             "message": f"Found {len(matches)} examples for '{topic}'"
+        }
+    
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Get operation capabilities and requirements."""
+        return {
+            "actions": {
+                "search": {
+                    "description": "Search for LaTeX commands, environments, or general topics",
+                    "required_params": ["query"],
+                    "examples": [
+                        "reference(action='search', query='section')",
+                        "reference(action='search', query='math environments')"
+                    ]
+                },
+                "symbol": {
+                    "description": "Find symbols by description",
+                    "required_params": ["description"],
+                    "examples": [
+                        "reference(action='symbol', description='approximately equal')",
+                        "reference(action='symbol', description='infinity')"
+                    ]
+                },
+                "package": {
+                    "description": "Get information about a LaTeX package",
+                    "required_params": ["name"],
+                    "examples": [
+                        "reference(action='package', name='amsmath')",
+                        "reference(action='package', name='graphicx')"
+                    ]
+                },
+                "check_style": {
+                    "description": "Check document for LaTeX style best practices",
+                    "required_params": ["path"],
+                    "examples": [
+                        "reference(action='check_style', path='document.tex')",
+                        "reference(action='check_style', path='chapter1.tex')"
+                    ]
+                },
+                "error_help": {
+                    "description": "Get help for LaTeX error messages",
+                    "required_params": ["error"],
+                    "examples": [
+                        "reference(action='error_help', error='Undefined control sequence')",
+                        "reference(action='error_help', error='Missing $ inserted')"
+                    ]
+                },
+                "example": {
+                    "description": "Get working examples for a topic",
+                    "required_params": ["topic"],
+                    "examples": [
+                        "reference(action='example', topic='table')",
+                        "reference(action='example', topic='equation')"
+                    ]
+                }
+            },
+            "system_requirements": {
+                "command": [
+                    {
+                        "name": "texdoc",
+                        "required_for": ["package"],
+                        "install_hint": "Part of TeX Live distribution"
+                    }
+                ]
+            },
+            "optional_features": [
+                {
+                    "name": "Extended symbol search",
+                    "description": "Visual symbol rendering",
+                    "requirements": [
+                        {"type": "command", "name": "pdflatex"}
+                    ]
+                }
+            ],
+            "data_sources": {
+                "commands": "LaTeX2e reference",
+                "symbols": "Comprehensive LaTeX Symbol List",
+                "packages": "Package documentation",
+                "errors": "Community knowledge"
+            }
         }
