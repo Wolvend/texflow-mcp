@@ -6,35 +6,85 @@ and manages workflow suggestions.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+
+try:
+    from importlib import resources
+except ImportError:
+    # Fallback for Python < 3.9
+    import importlib_resources as resources
 
 
 class SemanticRouter:
     """Routes semantic operations to appropriate handlers with workflow awareness."""
     
     def __init__(self, config_dir: Path = None):
-        self.config_dir = config_dir or Path(__file__).parent.parent.parent / "config"
+        self.config_dir = config_dir
         self.workflows = self._load_workflows()
         self.personalities = self._load_personalities()
         self.operation_handlers = {}
         self.current_context = {}
         
+    def _load_config_file(self, filename: str, default: Dict[str, Any]) -> Dict[str, Any]:
+        """Load a configuration file from various possible locations."""
+        if self.config_dir:
+            # Use provided directory
+            config_path = self.config_dir / filename
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    return json.load(f)
+            return default
+        
+        # Try multiple approaches to find the config file
+        content = None
+        
+        # 1. Try relative to current file (development mode)
+        dev_path = Path(__file__).parent.parent.parent / "config" / filename
+        if dev_path.exists():
+            with open(dev_path, 'r') as f:
+                content = f.read()
+        
+        # 2. Try using importlib.resources (installed package)
+        if not content:
+            try:
+                if hasattr(resources, 'files'):
+                    # Python 3.9+
+                    files = resources.files('config')
+                    content = files.joinpath(filename).read_text()
+                else:
+                    # Older Python
+                    content = resources.read_text('config', filename)
+            except Exception:
+                pass
+        
+        # 3. Try relative to package installation
+        if not content:
+            pkg_path = Path(__file__).parent.parent / "config" / filename
+            if pkg_path.exists():
+                with open(pkg_path, 'r') as f:
+                    content = f.read()
+        
+        # 4. Try environment variable override
+        if not content and os.getenv('TEXFLOW_CONFIG_DIR'):
+            env_path = Path(os.getenv('TEXFLOW_CONFIG_DIR')) / filename
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    content = f.read()
+        
+        if content:
+            return json.loads(content)
+        else:
+            return default
+    
     def _load_workflows(self) -> Dict[str, Any]:
         """Load workflow hints from configuration."""
-        workflow_path = self.config_dir / "workflows.json"
-        if workflow_path.exists():
-            with open(workflow_path, 'r') as f:
-                return json.load(f)
-        return {"workflow_hints": {}, "format_escalation": {}}
+        return self._load_config_file("workflows.json", {"workflow_hints": {}, "format_escalation": {}})
     
     def _load_personalities(self) -> Dict[str, Any]:
         """Load personality definitions."""
-        personality_path = self.config_dir / "personalities.json"
-        if personality_path.exists():
-            with open(personality_path, 'r') as f:
-                return json.load(f)
-        return {}
+        return self._load_config_file("personalities.json", {})
     
     def register_operation(self, name: str, handler: Any) -> None:
         """Register an operation handler."""

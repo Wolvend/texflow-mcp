@@ -19,8 +19,11 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = {find = {where = ["."], include = ["src*"]}}
+packages = {find = {where = ["."], include = ["src*", "config*"]}}
 py-modules = ["texflow", "texflow_unified"]
+include-package-data = true
 
 [tool.setuptools.package-data]
 src = ["data/**/*"]
+config = ["*.json"]
+"*" = ["config/**/*"]

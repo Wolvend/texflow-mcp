@@ -10,10 +10,17 @@ import subprocess
 import shutil
 import re
 import platform
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from .package_discovery import PackageDiscovery
+
+try:
+    from importlib import resources
+except ImportError:
+    # Fallback for Python < 3.9
+    import importlib_resources as resources
 
 
 class SystemDependencyChecker:
@@ -27,12 +34,7 @@ class SystemDependencyChecker:
             manifest_path: Path to system dependencies manifest JSON file.
                           Defaults to config/system_dependencies.json
         """
-        if manifest_path is None:
-            # Default to manifest in config directory relative to this file
-            self.manifest_path = Path(__file__).parent.parent.parent / "config" / "system_dependencies.json"
-        else:
-            self.manifest_path = Path(manifest_path)
-        
+        self.manifest_path = manifest_path
         self.platform_name = self._detect_platform()
         self.manifest = self._load_manifest()
         self._check_cache = {}  # Cache results for performance
@@ -50,13 +52,64 @@ class SystemDependencyChecker:
     
     def _load_manifest(self) -> Dict[str, Any]:
         """Load the system dependencies manifest."""
-        try:
-            with open(self.manifest_path, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"System dependencies manifest not found: {self.manifest_path}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in manifest file: {e}")
+        if self.manifest_path:
+            # Use provided path
+            try:
+                with open(self.manifest_path, 'r') as f:
+                    return json.load(f)
+            except FileNotFoundError:
+                raise FileNotFoundError(f"System dependencies manifest not found: {self.manifest_path}")
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in manifest file: {e}")
+        
+        # Try multiple approaches to find the manifest
+        manifest_content = None
+        
+        # 1. Try relative to current file (development mode)
+        dev_path = Path(__file__).parent.parent.parent / "config" / "system_dependencies.json"
+        if dev_path.exists():
+            with open(dev_path, 'r') as f:
+                manifest_content = f.read()
+        
+        # 2. Try using importlib.resources (installed package)
+        if not manifest_content:
+            try:
+                # First try as if config is a top-level package
+                if hasattr(resources, 'files'):
+                    # Python 3.9+
+                    files = resources.files('config')
+                    manifest_content = files.joinpath('system_dependencies.json').read_text()
+                else:
+                    # Older Python
+                    manifest_content = resources.read_text('config', 'system_dependencies.json')
+            except Exception:
+                pass
+        
+        # 3. Try relative to package installation
+        if not manifest_content:
+            # Look for config directory next to src
+            pkg_path = Path(__file__).parent.parent / "config" / "system_dependencies.json"
+            if pkg_path.exists():
+                with open(pkg_path, 'r') as f:
+                    manifest_content = f.read()
+        
+        # 4. Try environment variable override
+        if not manifest_content and os.getenv('TEXFLOW_CONFIG_DIR'):
+            env_path = Path(os.getenv('TEXFLOW_CONFIG_DIR')) / "system_dependencies.json"
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    manifest_content = f.read()
+        
+        if manifest_content:
+            return json.loads(manifest_content)
+        else:
+            raise FileNotFoundError(
+                "System dependencies manifest not found. Searched in:\n"
+                f"  - {dev_path}\n"
+                f"  - Package resources (config/system_dependencies.json)\n"
+                f"  - {Path(__file__).parent.parent / 'config' / 'system_dependencies.json'}\n"
+                f"  - TEXFLOW_CONFIG_DIR environment variable"
+            )
     
     def check_dependency(self, dep_name: str, dep_config: Dict[str, Any]) -> Dict[str, Any]:
         """
