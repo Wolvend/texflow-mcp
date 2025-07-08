@@ -45,18 +45,19 @@ list_projects()  # See all your document projects
 
 ## 🎯 Semantic Tool Organization
 
-TeXFlow's tools are organized into 8 semantic operations for easier discovery and use:
+TeXFlow's tools are organized into 9 semantic operations for easier discovery and use:
 
 - **📄 Document** - Create, edit, convert, and validate documents
 - **🖨️ Output** - Print and export to various formats
 - **📁 Project** - Organize work into logical units
-- **🖨️ Printer** - Manage printing hardware
 - **🔍 Discover** - Find documents, fonts, and resources
-- **📦 Archive** - Manage versions and document history
+- **📦 Organizer** - Archive, move, clean documents and auxiliary files
+- **🖨️ Printer** - Manage printing hardware
 - **💡 Workflow** - Get guidance and automation
 - **📋 Templates** - Start from pre-built document templates
+- **📚 Reference** - LaTeX documentation search and help
 
-See [Tool Grouping](docs/TOOL_GROUPING.md) for details.
+See [Tool Reference](docs/TEXFLOW_REFERENCE.md) for detailed documentation of all tools.
 
 ## Features
 
@@ -237,9 +238,9 @@ uv run texflow
 
 ## Usage
 
-### Quick Start - 7 Unified Tools
+### Quick Start - 9 Unified Tools
 
-TeXFlow provides 8 semantic tools that intelligently guide your document workflow:
+TeXFlow provides 9 semantic tools that intelligently guide your document workflow:
 
 #### 1. `document` - Create, edit, and transform documents
 ```python
@@ -299,7 +300,7 @@ Each tool provides hints for next steps, guiding you through complex workflows.
 
 ### Complete Tool Reference
 
-For detailed documentation of all 7 tools, see [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md).
+For detailed documentation of all 9 tools, see [Tool Reference](docs/TEXFLOW_REFERENCE.md).
 
 ### Legacy Tool Documentation
 
@@ -812,11 +813,12 @@ latex_to_pdf(file_path="/home/user/Documents/paper.tex", output_path="paper.pdf"
 
 ## Documentation
 
-- 📖 [Unified Tool Reference](docs/UNIFIED_TOOL_REFERENCE.md) - Complete guide to the 8 semantic tools
-- 🎯 [Tool Grouping](docs/TOOL_GROUPING.md) - Semantic organization and design rationale
+- 📖 [Tool Reference](docs/TEXFLOW_REFERENCE.md) - Complete guide to all 9 semantic tools
 - 🤝 [Collaborative Editing Guide](docs/COLLABORATIVE_EDITING.md) - Deep dive into collaboration features
-- 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Technical design and implementation details
-- 📚 [Legacy Tool Reference](docs/TOOL_REFERENCE.md) - Documentation for individual tools (deprecated)
+- 🎯 [LaTeX Reference Design](docs/LATEX_REFERENCE_DESIGN.md) - Design of the LaTeX documentation tool
+- 📄 [System Dependencies](docs/SYSTEM_DEPENDENCIES.md) - System requirements and dependency management
+- 👨‍🍳 [Recipe Book Example](docs/RECIPE_BOOK_EXAMPLE.md) - Practical example creating a recipe book
+- 🚀 [Complete Workflow Example](docs/COMPLETE_WORKFLOW_EXAMPLE.md) - End-to-end workflow examples
 
 ## Future Enhancements
 
