@@ -668,15 +668,23 @@ When saving PDFs with `markdown_to_pdf`:
 
 This ensures users aren't repeatedly asked about printer selection and files are saved to predictable locations.
 
-## Claude Desktop Configuration
+## Configuration for Claude Desktop and Claude Code
 
 ### Important: Workspace Path
 
 TeXFlow requires a workspace path where all your document projects will be stored. This is passed as the last argument to the `texflow` command.
 
-### Method 1: Run from GitHub (Recommended)
+### For Claude Desktop
 
-Add to your Claude Desktop config:
+Claude Desktop uses a JSON configuration file to manage MCP servers. The location depends on your operating system:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+#### Method 1: Run from GitHub (Recommended)
+
+Add this to your `claude_desktop_config.json`:
 
 ```json
 {
@@ -689,42 +697,76 @@ Add to your Claude Desktop config:
 }
 ```
 
-Or use the Claude CLI:
+**Note**: Replace `/home/aaron/Documents/TeXFlow` with your desired workspace path.
 
-```bash
-# Add with user scope (recommended)  
-claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow /home/aaron/Documents/TeXFlow
-```
+#### Method 2: Run from local directory
 
-### Method 2: Run from local directory
-
-If you've cloned the repository:
+If you've cloned the repository locally:
 
 ```json
 {
   "mcpServers": {
     "texflow": {
       "command": "uv",
-      "args": ["--directory", "/home/aaron/Projects/ai/mcp/texflow-mcp", "run", "texflow", "/home/aaron/Documents/TeXFlow"]
+      "args": ["--directory", "/path/to/texflow-mcp", "run", "texflow", "/home/aaron/Documents/TeXFlow"]
     }
   }
 }
 ```
 
-Or with Claude CLI:
+**Note**: Replace `/path/to/texflow-mcp` with the actual path to your cloned repository.
+
+After editing the config file, restart Claude Desktop for the changes to take effect.
+
+### For Claude Code
+
+Claude Code provides a CLI command to add MCP servers. You can choose between different scopes:
+
+- `--scope user`: Available across all your projects (recommended)
+- `--scope project`: Only available in the current project
+- `--scope local`: Available only on this machine
+
+#### Method 1: Run from GitHub (Recommended)
+
+```bash
+# Add with user scope (available in all projects)
+claude mcp add --scope user texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow ~/Documents/TeXFlow
+
+# Or with project scope (current project only)
+claude mcp add --scope project texflow uvx -- --from git+https://github.com/aaronsb/texflow-mcp.git texflow ~/Documents/TeXFlow
+```
+
+#### Method 2: Run from local directory
+
+If you've cloned the repository:
 
 ```bash
 # Add with user scope
-claude mcp add --scope user texflow uv -- --directory /home/aaron/Projects/ai/mcp/texflow-mcp run texflow /home/aaron/Documents/TeXFlow
+claude mcp add --scope user texflow uv -- --directory /path/to/texflow-mcp run texflow ~/Documents/TeXFlow
+
+# Or with project scope
+claude mcp add --scope project texflow uv -- --directory /path/to/texflow-mcp run texflow ~/Documents/TeXFlow
 ```
+
+**Note**: The `--` after the scope is required to separate Claude Code options from the command arguments.
 
 ### Workspace Path Options
 
-1. **Command line argument**: `/home/aaron/Documents/TeXFlow` as shown above
-2. **Environment variable**: Set `TEXFLOW_WORKSPACE=/home/aaron/Documents/TeXFlow`
+You can specify the workspace path in three ways:
+
+1. **Command line argument**: `~/Documents/TeXFlow` as shown in the examples above
+2. **Environment variable**: Set `TEXFLOW_WORKSPACE=~/Documents/TeXFlow` in your shell or system environment
 3. **Default**: If neither is provided, defaults to `~/Documents/TeXFlow`
 
 All TeXFlow projects and documents will be created within this workspace directory.
+
+### Verifying Installation
+
+After installation, you can verify TeXFlow is working by asking Claude to:
+
+1. List available TeXFlow projects: "Use texflow to list my projects"
+2. Check system dependencies: "Check texflow system dependencies"
+3. Create a test project: "Create a new texflow project called 'test'"
 
 ## AI-to-AI Collaboration 🤖🤝🤖
 
