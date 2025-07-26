@@ -44,6 +44,9 @@ class ValidationService:
         # Determine if input is content or path
         is_content = isinstance(content_or_path, str) and not Path(content_or_path).exists()
         
+        # Store original path info for debugging
+        original_input = str(content_or_path) if not is_content else "<content>"
+        
         if format == "auto":
             if is_content:
                 format = self._detect_format_from_content(content_or_path)
@@ -60,7 +63,13 @@ class ValidationService:
         }
         
         if format in validators:
-            return validators[format](content_or_path)
+            result = validators[format](content_or_path)
+            # Ensure the format is included in the result
+            result["format"] = format
+            # Add debug info if there's a mismatch
+            if not is_content and Path(content_or_path).suffix.lower() == '.tex' and format != 'latex':
+                result["debug_warning"] = f"File {original_input} has .tex extension but was validated as {format}"
+            return result
         else:
             return {
                 "success": False,
@@ -227,7 +236,20 @@ class ValidationService:
             '.mkd': 'markdown',
         }
         
-        return ext_map.get(path.suffix.lower(), 'auto')
+        detected = ext_map.get(path.suffix.lower())
+        if detected:
+            return detected
+        
+        # If no known extension, try to detect from content
+        if path.exists():
+            try:
+                content = path.read_text()
+                return self._detect_format_from_content(content)
+            except:
+                pass
+        
+        # Default to markdown if all else fails
+        return 'markdown'
     
     def _extract_latex_errors(self, output: str) -> List[str]:
         """Extract error messages from LaTeX output."""

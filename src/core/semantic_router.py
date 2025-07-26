@@ -248,20 +248,35 @@ class SemanticRouter:
                 if triggers:
                     result["format_suggestion"] = self._get_format_escalation(triggers)
         
-        # Add token efficiency hints for existing documents
-        if operation == "document" and action in ["read", "status"]:
+        # Add targeted efficiency hints that complement (don't compete with) document operations
+        if operation == "document" and action == "create" and result.get("success"):
+            # Only show regeneration warning when user is actually creating/recreating
             result["efficiency_hint"] = {
-                "message": "Document exists - use edit operations for changes",
-                "important": "Avoid regenerating documents unless: corrupted, unreadable, needs complete rewrite, or user specifically requests it",
-                "next_steps": [
-                    {
-                        "operation": "document",
-                        "action": "edit",
-                        "description": "Make specific changes to this document",
-                        "command": "document(action='edit', path='...', changes=[...])"
-                    }
+                "message": "Document created successfully",
+                "guidance": "For future changes, prefer edit operations over recreating documents",
+                "why": "Editing is more token-efficient and preserves document context",
+                "next_actions": [
+                    "document(action='edit', path='...')",
+                    "document(action='read', path='...', mode='summary')"
                 ]
             }
+        
+        # Add workflow guidance for read operations that successfully return content
+        elif operation == "document" and action == "read" and result.get("success") and result.get("content"):
+            # Check if this is an enhanced read result (has mode parameter)
+            if result.get("mode"):
+                # Enhanced read already has appropriate formatting and hints - don't override
+                pass
+            else:
+                # Standard read - add basic workflow hints
+                result["workflow_hint"] = {
+                    "message": "Document content loaded",
+                    "next_actions": [
+                        "document(action='edit', path='...', old_string='...', new_string='...')",
+                        "document(action='validate', content_or_path='...')" if result.get('format') == 'latex' else None,
+                        "output(action='export', source='...')"
+                    ]
+                }
         
         # Add conversion hint when format change is needed
         if operation == "document" and action == "create" and result.get("format") == "markdown":

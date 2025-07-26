@@ -86,8 +86,78 @@ def format_semantic_result(result: Dict[str, Any]) -> str:
     # Format success message
     output = result.get("message", "✓ Operation completed")
     
-    # Add workflow hints if present
-    if result.get("workflow"):
+    # Handle enhanced document read results
+    if result.get("mode") and result.get("success"):
+        mode = result["mode"]
+        
+        if mode == "summary":
+            # Format document summary
+            output = f"📄 Document Summary ({result['format'].upper()})"
+            
+            if result.get("metadata"):
+                meta = result["metadata"]
+                output += f"\n📊 {meta['total_lines']} lines • {meta['size_bytes']} bytes • {result['format']} format"
+            
+            if result.get("structure"):
+                struct = result["structure"]
+                output += f"\n📑 Structure: {len(struct['sections'])} sections"
+                if struct['sections']:
+                    output += f"\n   Sections: {', '.join(struct['sections'][:3])}"
+                    if len(struct['sections']) > 3:
+                        output += f" (+{len(struct['sections'])-3} more)"
+                
+                if struct.get('packages'):
+                    output += f"\n   Packages: {', '.join(struct['packages'][:3])}"
+                    if len(struct['packages']) > 3:
+                        output += f" (+{len(struct['packages'])-3} more)"
+                
+                output += f"\n   Content: {struct['figures']} figures, {struct['tables']} tables, {struct['equations']} equations"
+            
+            if result.get("analysis"):
+                analysis = result["analysis"]
+                output += f"\n🎯 Type: {analysis['document_type']}, Complexity: {analysis['complexity']}"
+        
+        elif mode == "full":
+            # Format full document content
+            if result.get("content"):
+                output = f"📄 Complete Document ({result['format'].upper()})"
+                if result.get("metadata"):
+                    meta = result["metadata"]
+                    output += f"\n📊 {meta['total_lines']} lines • {meta['size_bytes']} bytes"
+                output += f"\n\n{result['content']}"
+        
+        elif mode == "window":
+            # Format windowed content
+            if result.get("content") and result.get("window"):
+                window = result["window"]
+                output = f"📄 Document Window (Lines {window['start']}-{window['end']})"
+                if result.get("metadata"):
+                    meta = result["metadata"]
+                    output += f"\n📊 Showing {window['size']} of {meta['total_lines']} total lines"
+                output += f"\n\n{result['content']}"
+                
+                # Add navigation hints
+                if result.get("navigation"):
+                    nav = result["navigation"]
+                    if nav.get("has_next") or nav.get("has_previous"):
+                        output += "\n\n🧭 Navigation:"
+                        if nav.get("has_previous"):
+                            output += f"\n← Previous: window_start={nav['suggested_previous']}"
+                        if nav.get("has_next"):
+                            output += f"\n→ Next: window_start={nav['suggested_next']}"
+        
+        # Add workflow hints for enhanced reads
+        if result.get("workflow"):
+            workflow = result["workflow"]
+            if workflow.get("message") and workflow["message"] not in output:
+                output += f"\n\n{workflow['message']}"
+            if workflow.get("next_steps"):
+                output += "\n💡 Next steps:"
+                for step in workflow["next_steps"]:
+                    output += f"\n→ {step}"
+    
+    # Add workflow hints if present (for non-enhanced reads)
+    elif result.get("workflow"):
         workflow = result["workflow"]
         if workflow.get("message"):
             output += f"\n\n{workflow['message']}"
@@ -96,12 +166,25 @@ def format_semantic_result(result: Dict[str, Any]) -> str:
             for suggestion in workflow["suggested_next"]:
                 output += f"\n→ {suggestion['description']}: {suggestion['command']}"
     
-    # Add efficiency hints
+    # Add targeted efficiency hints
     if result.get("efficiency_hint"):
         hint = result["efficiency_hint"]
-        output += f"\n\n⚡ {hint['message']}"
-        if hint.get("important"):
-            output += f"\n⚠️  {hint['important']}"
+        output += f"\n\n💡 {hint['message']}"
+        if hint.get("guidance"):
+            output += f"\n🎯 {hint['guidance']}"
+        if hint.get("why"):
+            output += f"\n📝 Why: {hint['why']}"
+    
+    # Add workflow hints for successful operations
+    if result.get("workflow_hint"):
+        hint = result["workflow_hint"]
+        output += f"\n\n🔄 {hint['message']}"
+        if hint.get("next_actions"):
+            valid_actions = [action for action in hint["next_actions"] if action]
+            if valid_actions:
+                output += "\n💡 Next steps:"
+                for action in valid_actions:
+                    output += f"\n→ {action}"
     
     # Add format suggestions
     if result.get("format_suggestion"):
@@ -167,7 +250,10 @@ def document(
     old_string: Optional[str] = None,
     new_string: Optional[str] = None,
     page: Optional[int] = None,
-    dpi: Optional[int] = None
+    dpi: Optional[int] = None,
+    mode: Optional[str] = None,
+    window_start: Optional[int] = None,
+    window_size: Optional[int] = None
 ) -> str:
     """SEMANTIC WRAPPER: Document tool with intelligent guidance.
     

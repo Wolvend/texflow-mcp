@@ -86,9 +86,19 @@ class DocumentOperation:
                     "formats": ["markdown", "latex", "auto"]
                 },
                 "read": {
-                    "description": "Read document contents",
+                    "description": "Read document contents with intelligent viewing modes",
                     "required_params": ["path"],
-                    "optional_params": ["offset", "limit"]
+                    "optional_params": ["mode", "window_start", "window_size", "offset", "limit"],
+                    "modes": {
+                        "auto": "Automatically choose full or window mode based on document size",
+                        "full": "Return complete document content (optimized for small documents)", 
+                        "window": "Return windowed content for large documents",
+                        "summary": "Return document structure and metadata without full content"
+                    },
+                    "thresholds": {
+                        "auto_window_threshold": 200,
+                        "default_window_size": 50
+                    }
                 },
                 "edit": {
                     "description": "Edit existing document with intelligent fallbacks. Automatically buffers content when exact match fails and provides suggestions for recovery.",
@@ -233,52 +243,152 @@ class DocumentOperation:
             }
     
     def _read_document(self, params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-        """Read document contents."""
+        """Read document contents with intelligent viewing modes."""
         path = params.get("path")
-        offset = params.get("offset", 1)
-        limit = params.get("limit", 50)
+        mode = params.get("mode", "auto")
+        window_start = params.get("window_start", params.get("offset", 1))
+        window_size = params.get("window_size", params.get("limit", 50))
         
         if not path:
             return {"error": "Path parameter is required"}
         
         try:
             # Use resolve_path to get the correct path considering project context
-            file_path = texflow.resolve_path(path)
+            try:
+                file_path = texflow.resolve_path(path)
+            except Exception:
+                # Fallback: try multiple path resolution strategies
+                file_path = Path(path)
+                if not file_path.is_absolute():
+                    # Try current working directory first
+                    if (Path.cwd() / file_path).exists():
+                        file_path = Path.cwd() / file_path
+                    # Try TeXFlow workspace directory
+                    elif hasattr(texflow, 'SESSION_CONTEXT') and texflow.SESSION_CONTEXT.get('workspace_root'):
+                        workspace_path = Path(texflow.SESSION_CONTEXT['workspace_root']) / file_path
+                        if workspace_path.exists():
+                            file_path = workspace_path
+                    # Try default TeXFlow directory
+                    else:
+                        default_path = Path.home() / "Documents" / "TeXFlow" / file_path
+                        if default_path.exists():
+                            file_path = default_path
             
             if not file_path.exists():
                 return {"error": f"File not found: {file_path}"}
             
-            # Read file contents
+            # Get file metadata
+            import os
+            import hashlib
+            from datetime import datetime
+            
+            stat = file_path.stat()
+            file_size = stat.st_size
+            last_modified = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            
+            # Calculate file hash for caching
             content = file_path.read_text()
+            file_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+            
             lines = content.splitlines()
-            
-            # Apply offset and limit
-            start_line = max(0, offset - 1)  # Convert to 0-based indexing
-            end_line = start_line + limit if limit else len(lines)
-            selected_lines = lines[start_line:end_line]
-            
-            # Format with line numbers like the original
-            formatted_lines = []
-            for i, line in enumerate(selected_lines, start=offset):
-                formatted_lines.append(f"{i:4d}\t{line}")
-            
-            result_content = "\n".join(formatted_lines)
-            if len(lines) > end_line:
-                result_content += f"\n... ({len(lines)} total lines)"
+            total_lines = len(lines)
             
             # Detect format from extension
             format_type = self._detect_format_from_path(str(file_path))
             
-            return {
-                "success": True,
-                "content": result_content,
-                "path": str(file_path),
-                "format": format_type,
-                "lines_read": len(selected_lines),
-                "offset": offset,
-                "limit": limit,
-                "total_lines": len(lines)
-            }
+            # Auto-detect mode based on document size
+            auto_window_threshold = 200
+            if mode == "auto":
+                mode = "full" if total_lines <= auto_window_threshold else "window"
+            
+            # Handle different modes
+            if mode == "summary":
+                return self._generate_document_summary(file_path, content, lines, format_type, file_size, last_modified, file_hash)
+            
+            elif mode == "full":
+                # Return complete document with line numbers
+                formatted_lines = []
+                for i, line in enumerate(lines, 1):
+                    formatted_lines.append(f"{i:4d}\t{line}")
+                
+                result_content = "\n".join(formatted_lines)
+                
+                return {
+                    "success": True,
+                    "mode": "full",
+                    "content": result_content,
+                    "path": str(file_path),
+                    "format": format_type,
+                    "metadata": {
+                        "total_lines": total_lines,
+                        "size_bytes": file_size,
+                        "last_modified": last_modified,
+                        "hash": file_hash
+                    },
+                    "workflow": {
+                        "message": f"Complete document loaded ({total_lines} lines)",
+                        "token_optimization": f"Full mode used for {total_lines}-line document"
+                    }
+                }
+            
+            elif mode == "window":
+                # Return windowed content
+                start_line = max(0, window_start - 1)  # Convert to 0-based indexing
+                end_line = min(start_line + window_size, total_lines)
+                selected_lines = lines[start_line:end_line]
+                
+                # Format with line numbers
+                formatted_lines = []
+                for i, line in enumerate(selected_lines, start=window_start):
+                    formatted_lines.append(f"{i:4d}\t{line}")
+                
+                result_content = "\n".join(formatted_lines)
+                
+                # Add context indicators
+                if end_line < total_lines:
+                    result_content += f"\n... (showing lines {window_start}-{end_line} of {total_lines})"
+                
+                # Navigation hints
+                has_previous = start_line > 0
+                has_next = end_line < total_lines
+                suggested_next = end_line + 1 if has_next else None
+                suggested_previous = max(1, window_start - window_size) if has_previous else None
+                
+                return {
+                    "success": True,
+                    "mode": "window",
+                    "content": result_content,
+                    "path": str(file_path),
+                    "format": format_type,
+                    "window": {
+                        "start": window_start,
+                        "end": end_line,
+                        "size": len(selected_lines)
+                    },
+                    "metadata": {
+                        "total_lines": total_lines,
+                        "size_bytes": file_size,
+                        "last_modified": last_modified,
+                        "hash": file_hash
+                    },
+                    "navigation": {
+                        "has_previous": has_previous,
+                        "has_next": has_next,
+                        "suggested_next": suggested_next,
+                        "suggested_previous": suggested_previous
+                    },
+                    "workflow": {
+                        "message": f"Window view: lines {window_start}-{end_line} of {total_lines}",
+                        "next_steps": [
+                            f"Next: document(action='read', path='{path}', mode='window', window_start={suggested_next})" if has_next else None,
+                            f"Previous: document(action='read', path='{path}', mode='window', window_start={suggested_previous})" if has_previous else None,
+                            f"Full: document(action='read', path='{path}', mode='full')" if total_lines <= 500 else None
+                        ]
+                    }
+                }
+            
+            else:
+                return {"error": f"Unknown mode: {mode}. Available modes: auto, full, window, summary"}
             
         except Exception as e:
             return {"error": str(e), "path": path}
@@ -640,6 +750,174 @@ class DocumentOperation:
             phrases.append(header_match.group(2))
         
         return [p for p in phrases if len(p) > 10]
+    
+    def _generate_document_summary(self, file_path: Path, content: str, lines: List[str], 
+                                 format_type: str, file_size: int, last_modified: str, file_hash: str) -> Dict[str, Any]:
+        """Generate document summary with structure analysis."""
+        import re
+        
+        total_lines = len(lines)
+        
+        # Initialize structure counters
+        structure = {
+            "sections": [],
+            "subsections": [],
+            "figures": 0,
+            "tables": 0,
+            "equations": 0,
+            "citations": 0,
+            "packages": [],
+            "environments": []
+        }
+        
+        # Analyze document structure based on format
+        if format_type == "latex":
+            # Extract LaTeX structure
+            for line in lines:
+                line_stripped = line.strip()
+                
+                # Count sections
+                section_match = re.match(r'\\(chapter|section)\{([^}]+)\}', line_stripped)
+                if section_match:
+                    structure["sections"].append(section_match.group(2))
+                
+                # Count subsections
+                subsection_match = re.match(r'\\(subsection|subsubsection)\{([^}]+)\}', line_stripped)
+                if subsection_match:
+                    structure["subsections"].append(subsection_match.group(2))
+                
+                # Count figures
+                if re.search(r'\\begin\{figure\}', line_stripped):
+                    structure["figures"] += 1
+                
+                # Count tables
+                if re.search(r'\\begin\{table\}', line_stripped):
+                    structure["tables"] += 1
+                
+                # Count equations (both numbered and unnumbered)
+                if re.search(r'\\begin\{(equation|align|gather|multline)', line_stripped):
+                    structure["equations"] += 1
+                elif re.search(r'\$\$.*\$\$', line_stripped):
+                    structure["equations"] += 1
+                
+                # Count citations
+                citations = re.findall(r'\\cite\{[^}]+\}', line_stripped)
+                structure["citations"] += len(citations)
+                
+                # Extract packages
+                package_match = re.match(r'\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}', line_stripped)
+                if package_match:
+                    packages = [pkg.strip() for pkg in package_match.group(1).split(',')]
+                    structure["packages"].extend(packages)
+                
+                # Extract environments
+                env_match = re.match(r'\\begin\{([^}]+)\}', line_stripped)
+                if env_match and env_match.group(1) not in ['document', 'figure', 'table']:
+                    if env_match.group(1) not in structure["environments"]:
+                        structure["environments"].append(env_match.group(1))
+                        
+        elif format_type == "markdown":
+            # Extract Markdown structure
+            for line in lines:
+                line_stripped = line.strip()
+                
+                # Count headers
+                header_match = re.match(r'^(#{1,6})\s+(.+)', line_stripped)
+                if header_match:
+                    level = len(header_match.group(1))
+                    title = header_match.group(2)
+                    if level <= 2:
+                        structure["sections"].append(title)
+                    else:
+                        structure["subsections"].append(title)
+                
+                # Count images (markdown figures)
+                if re.search(r'!\[.*?\]\(.*?\)', line_stripped):
+                    structure["figures"] += 1
+                
+                # Count tables (markdown tables)
+                if re.search(r'\|.*\|', line_stripped):
+                    structure["tables"] += 1
+                
+                # Count code blocks
+                if re.search(r'```', line_stripped):
+                    if "code" not in structure["environments"]:
+                        structure["environments"].append("code")
+        
+        # Remove duplicates and sort
+        structure["packages"] = sorted(list(set(structure["packages"])))
+        structure["environments"] = sorted(list(set(structure["environments"])))
+        
+        # Generate content preview (first few non-empty lines)
+        preview_lines = []
+        for line in lines[:10]:
+            if line.strip() and not line.strip().startswith('%') and not line.strip().startswith('\\documentclass'):
+                preview_lines.append(line.strip())
+                if len(preview_lines) >= 3:
+                    break
+        
+        content_preview = "\n".join(preview_lines) if preview_lines else "No preview available"
+        
+        return {
+            "success": True,
+            "mode": "summary",
+            "path": str(file_path),
+            "format": format_type,
+            "metadata": {
+                "total_lines": total_lines,
+                "size_bytes": file_size,
+                "last_modified": last_modified,
+                "hash": file_hash
+            },
+            "structure": structure,
+            "content_preview": content_preview,
+            "analysis": {
+                "complexity": "high" if total_lines > 500 or len(structure["sections"]) > 10 else "medium" if total_lines > 100 else "low",
+                "document_type": self._analyze_document_type(structure, format_type),
+                "readability": f"{total_lines} lines, {len(structure['sections'])} main sections"
+            },
+            "workflow": {
+                "message": f"Document summary generated for {total_lines}-line {format_type} file",
+                "next_steps": [
+                    f"Read content: document(action='read', path='{file_path.name}', mode='full')" if total_lines <= 200 else f"document(action='read', path='{file_path.name}', mode='window')",
+                    f"Edit document: document(action='edit', path='{file_path.name}', ...)",
+                    f"Validate syntax: document(action='validate', content_or_path='{file_path.name}')" if format_type == "latex" else None
+                ]
+            }
+        }
+    
+    def _analyze_document_type(self, structure: Dict[str, Any], format_type: str) -> str:
+        """Analyze document type based on structure."""
+        if format_type == "latex":
+            # Check for academic paper indicators
+            if any(pkg in structure["packages"] for pkg in ["amsmath", "amsfonts", "amssymb"]):
+                if structure["citations"] > 10:
+                    return "academic_paper"
+                else:
+                    return "technical_document"
+            
+            # Check for book/thesis indicators
+            if any(section.lower() in ["abstract", "introduction", "conclusion"] for section in structure["sections"]):
+                if len(structure["sections"]) > 5:
+                    return "thesis_or_book"
+                else:
+                    return "academic_paper"
+            
+            # Check for presentation
+            if "beamer" in structure["packages"]:
+                return "presentation"
+            
+            return "general_document"
+        
+        elif format_type == "markdown":
+            if len(structure["sections"]) > 8:
+                return "documentation"
+            elif "code" in structure["environments"]:
+                return "technical_guide"
+            else:
+                return "general_document"
+        
+        return "unknown"
     
     def _generate_edit_suggestions(self, content: str, old_string: str, new_string: str) -> Dict[str, Any]:
         """Generate helpful suggestions when edit fails."""

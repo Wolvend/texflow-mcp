@@ -252,7 +252,6 @@ def resolve_path(path_str: Optional[str] = None, default_name: str = "document",
             return SESSION_CONTEXT["workspace_root"] / f"{default_name}{extension}"
 
 
-@mcp.tool()
 def document(
     action: str,
     content: Optional[str] = None,
@@ -438,7 +437,7 @@ def document(
         return f"❌ Error: Unknown document action '{action}'. Available: create, read, edit, convert, validate, status"
 
 
-@mcp.tool()
+
 def output(
     action: str,
     source: Optional[str] = None,
@@ -545,7 +544,7 @@ def output(
         return f"❌ Error: Unknown output action '{action}'. Available: print, export"
 
 
-@mcp.tool()
+
 def project(
     action: str,
     name: Optional[str] = None,
@@ -793,7 +792,7 @@ def project(
         return f"❌ Error: Unknown project action '{action}'. Available: create, switch, list, info, close, import"
 
 
-@mcp.tool()
+
 def printer(
     action: str,
     name: Optional[str] = None,
@@ -831,7 +830,7 @@ def printer(
         return f"❌ Error: Unknown printer action '{action}'. Available: list, set_default"
 
 
-@mcp.tool()
+
 def discover(
     action: str,
     folder: Optional[str] = None,
@@ -1079,7 +1078,7 @@ def discover(
         return f"❌ Error: Unknown discover action '{action}'. Available: documents, fonts, capabilities, recent"
 
 
-@mcp.tool()
+
 def archive(
     action: str,
     path: Optional[str] = None,
@@ -1144,7 +1143,7 @@ def archive(
         return f"❌ Error: Unknown archive action '{action}'. Available: archive, cleanup, versions"
 
 
-@mcp.tool()
+
 def workflow(
     action: str,
     task: Optional[str] = None
@@ -1220,7 +1219,7 @@ def workflow(
         return f"❌ Error: Unknown workflow action '{action}'. Available: suggest, next_steps"
 
 
-@mcp.tool()
+
 def templates(
     action: str,
     category: Optional[str] = None,
