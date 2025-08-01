@@ -1,189 +1,211 @@
-# TeXFlow
+# TeXFlow MCP Server
 
-![TeXFlow](docs/img/texflow-banner.png)
+A comprehensive LaTeX document processing server implementing the Model Context Protocol (MCP). TeXFlow provides advanced features for creating, editing, compiling, and managing LaTeX documents with built-in error handling, bibliography management, and multi-format export capabilities.
 
-A document authoring and composition MCP server that provides a pipeline for document creation: **Content → Processing → Output**. TeXFlow transforms your ideas into typeset documents using LaTeX, Markdown, and modern document processing tools.
+## 🚀 Key Features
 
-## 🚀 Key Innovation: Collaborative Document Editing
+### Enhanced Document Processing (100MB Support)
+- **Large Document Support**: Handle PDFs and LaTeX documents up to 100MB
+- **Book-Length Projects**: Create extremely long stories or intricate mathematical equations
+- **Incremental Writing**: Append and insert content for continuous document development
 
-This server introduces **collaborative editing capabilities** that prevent conflicts when multiple agents (human or AI) work on the same documents:
+### Advanced LaTeX Features
+- **Smart Error Diagnosis**: Automatic detection and fixing of compilation errors
+- **Bibliography Management**: Import from DOI, arXiv, ISBN; manage BibTeX databases
+- **Version Control**: Built-in git-like versioning with branching and rollback
+- **Smart Search**: LaTeX-aware search and replace with regex support
+- **Project Analytics**: Word count, writing velocity, structure analysis
+- **Multi-format Export**: PDF, DOCX, EPUB, HTML, Markdown, RTF
+- **Performance Optimization**: Compilation caching and profiling
 
-- **Change Detection**: Automatically detects when documents are modified externally
-- **Diff Visualization**: Shows unified diffs of what changed between edits
-- **Conflict Prevention**: Refuses to overwrite external changes, protecting everyone's work
-- **AI-to-AI Collaboration**: Enables multiple AI agents to work together on documents without conflicts
+## Installation
 
-## Core Value Proposition
+```bash
+# Clone the repository
+git clone https://github.com/Wolvend/texflow-mcp.git
+cd texflow-mcp
 
-TeXFlow enables MCP-compatible AI clients (Claude Desktop, Dive AI, or custom implementations) to have document workflow capabilities with **project-based organization**. Your AI assistant becomes a document authoring companion that can:
+# Install dependencies
+pip install -r requirements.txt
 
-- Create and manage document projects with organized structure
-- Author content in Markdown or LaTeX with proper project context
-- Transform documents through a sophisticated processing pipeline
-- Generate beautiful PDFs with professional typography
-- Print or export documents in various formats
+# Install LaTeX (required for compilation)
+# Ubuntu/Debian:
+sudo apt-get install texlive-full
 
-## 🚀 Quick Start with Projects
+# macOS:
+brew install --cask mactex
 
-```python
-# Create a new document project
-create_project("my-paper", "article")
-# Created project 'my-paper' at ~/Documents/TeXFlow/my-paper
-
-# Write content (automatically saved to project)
-save_markdown("# Introduction\n\nThis is my paper.", "intro.md")
-# Markdown saved to project 'my-paper': content/intro.md
-
-# Generate PDF (automatically saved to project/output/pdf/)
-markdown_to_pdf(file_path="intro.md", output_path="intro.pdf")
-# PDF saved to project 'my-paper': output/pdf/intro.pdf
-
-# Switch between projects
-use_project("thesis-2024")
-list_projects()  # See all your document projects
+# Windows:
+# Download and install MiKTeX from https://miktex.org/
 ```
 
-## 🎯 Semantic Tool Organization
+## Configuration
 
-TeXFlow's tools are organized into 9 semantic operations for easier discovery and use:
+Add TeXFlow to your MCP settings:
 
-- **📄 Document** - Create, edit, convert, and validate documents
-- **🖨️ Output** - Print and export to various formats
-- **📁 Project** - Organize work into logical units
-- **🔍 Discover** - Find documents, fonts, and resources
-- **📦 Organizer** - Archive, move, clean documents and auxiliary files
-- **🖨️ Printer** - Manage printing hardware
-- **💡 Workflow** - Get guidance and automation
-- **📋 Templates** - Start from pre-built document templates
-- **📚 Reference** - LaTeX documentation search and help
+```json
+{
+  "mcpServers": {
+    "texflow": {
+      "command": "python",
+      "args": ["/path/to/texflow-mcp/texflow_server_fixed.py"],
+      "env": {
+        "TEXFLOW_WORKSPACE": "/path/to/your/latex/workspace"
+      }
+    }
+  }
+}
+```
 
-See [Tool Reference](docs/TEXFLOW_REFERENCE.md) for detailed documentation of all tools.
+## Usage Examples
 
-## Features
+### Basic Document Operations
 
-### 📁 Project-Based Document Management
-- Create organized document projects with templates (article, thesis, letter)
-- Automatic project structure with content/, output/, and assets/ directories  
-- Switch between projects seamlessly
-- Project-aware file paths for better organization
-- All documents in one project stay together
+```python
+# Create a new LaTeX document
+{
+  "tool": "document",
+  "arguments": {
+    "action": "create",
+    "path": "paper.tex",
+    "format": "latex",
+    "content": "\\documentclass{article}\n\\begin{document}\nHello World\n\\end{document}"
+  }
+}
 
-### Printing
-- List available CUPS printers with status information
-- Print plain text directly
-- Print Markdown documents (rendered to PDF via pandoc)
-- Print files from the filesystem
-- Automatic file type detection
+# Compile to PDF
+{
+  "tool": "compile",
+  "arguments": {
+    "path": "paper.tex"
+  }
+}
+```
 
-### Document Creation & Saving
-- Convert Markdown to PDF without printing
-- Save Markdown content to .md files
-- Save LaTeX content to .tex files
-- Print LaTeX documents with full XeLaTeX compilation
-- Smart path handling with Documents folder default
-- Automatic file renaming to avoid overwrites
+### Advanced Features
 
-### Printer Management
-- Get detailed printer information
-- Set default printer
-- Enable/disable printers
-- Update printer descriptions and locations
+#### Bibliography Management
+```python
+# Import reference from DOI
+{
+  "tool": "bibliography",
+  "arguments": {
+    "action": "import",
+    "source": "10.1038/nature12373",
+    "file": "references.bib"
+  }
+}
+```
 
-### Collaborative Document Editing 🤝
-- Read documents with line numbers for precise editing
-- Make targeted edits with string replacement and validation
-- **Track external changes** with modification time and content hashing
-- **Show diffs** when documents are edited outside the AI session
-- **Prevent conflicts** between multiple editors (human or AI)
-- Check document status to see what changed since last read
-- Enable safe concurrent editing workflows
+#### Smart Editing
+```python
+# Find all unused citations
+{
+  "tool": "smart_edit",
+  "arguments": {
+    "action": "find_unused",
+    "path": "paper.tex",
+    "scope": "citations"
+  }
+}
+```
 
-### Document Archiving & Version Management 📦
-- Archive (soft delete) documents to hidden .texflow_archive folder
-- List and browse archived documents
-- Restore archived documents to original or new location
-- Find versions of a document (current and archived)
-- Bulk cleanup with pattern matching (e.g., archive *_old* files)
-- Preserves document history with timestamps
+#### Version Control
+```python
+# Commit changes
+{
+  "tool": "version",
+  "arguments": {
+    "action": "commit",
+    "path": "paper.tex",
+    "message": "Added introduction section"
+  }
+}
+```
 
-### Smart Features
-- Dependency checking at startup
-- Conditional tool registration based on available dependencies
-- Clear feedback when dependencies are missing
-- Automatic file type detection and appropriate handling
+## Tool Overview
 
-## Prerequisites
+TeXFlow provides 11 advanced tools for comprehensive document management:
 
-### Required
-- Linux system with CUPS installed
-- Python 3.10+
+1. **document** - Create, read, edit, append, and insert content into documents
+2. **output** - Export documents to various formats (PDF, DOCX, EPUB, etc.)
+3. **project** - Create and manage document projects with templates
+4. **compile** - Compile LaTeX documents with error handling
+5. **diagnose** - Automatically diagnose and fix LaTeX compilation errors
+6. **bibliography** - Import and manage BibTeX references from DOI, arXiv, ISBN
+7. **version** - Git-like version control for documents
+8. **smart_edit** - LaTeX-aware search and replace with regex support
+9. **analytics** - Track word count, writing velocity, and document structure
+10. **export** - Export to multiple formats beyond PDF
+11. **performance** - Monitor and optimize compilation performance
 
-### Optional (for additional features)
-- `pandoc` - For markdown to PDF conversion
-  - Debian/Ubuntu: `apt install pandoc`
-  - Fedora: `dnf install pandoc`
-  - Arch: `pacman -S pandoc`
-- `weasyprint` - For HTML to PDF conversion
-  - Debian/Ubuntu: `apt install weasyprint`
-  - Fedora: `dnf install weasyprint`
-  - Arch: `pacman -S python-weasyprint`
-- `rsvg-convert` - For SVG to PDF conversion
-  - Debian/Ubuntu: `apt install librsvg2-bin`
-  - Fedora: `dnf install librsvg2-tools`
-  - Arch: `pacman -S librsvg`
-- **LaTeX/XeLaTeX** - For PDF generation from markdown and LaTeX documents
-  
-  **Core Requirements:**
-  - XeLaTeX engine for PDF compilation
-  - Latin Modern fonts for proper text rendering
-  - Standard LaTeX packages for document formatting
-  
-  **Installation by Distribution:**
-  
-  - **Debian/Ubuntu**: 
-    ```bash
-    # Essential packages
-    apt install texlive-xetex texlive-fonts-recommended texlive-latex-recommended
-    
-    # For TikZ diagrams and graphics (if needed)
-    apt install texlive-pictures
-    
-    # For LaTeX validation (chktex)
-    apt install chktex
-    ```
-  
-  - **Fedora**: 
-    ```bash
-    # Essential packages
-    dnf install texlive-xetex texlive-collection-fontsrecommended
-    
-    # For TikZ diagrams and graphics (if needed)
-    dnf install texlive-collection-pictures
-    
-    # For LaTeX validation (chktex)
-    dnf install texlive-chktex
-    ```
-  
-  - **Arch**: 
-    ```bash
-    # Essential packages
-    pacman -S texlive-xetex texlive-fontsrecommended
-    
-    # For TikZ diagrams and graphics (if needed)
-    pacman -S texlive-pictures
-    
-    # For LaTeX validation (chktex)
-    pacman -S texlive-binextra
-    ```
-  
-  **What Each Package Provides:**
-  - `texlive-xetex`: XeLaTeX engine and fontspec package
-  - `texlive-fonts-recommended`: Latin Modern, Computer Modern, and other standard fonts
-  - `texlive-latex-recommended`: Essential LaTeX packages (geometry, etc.)
-  - `texlive-pictures`: TikZ package for creating diagrams and graphics
-  - `chktex`/`texlive-binextra`: LaTeX validation tools for checking syntax
+## Project Templates
 
-The server checks for these dependencies at startup and enables features that have their requirements met. Missing dependencies are reported with installation instructions.
+TeXFlow includes templates for:
+- **book**: Multi-chapter book projects
+- **thesis**: Academic thesis with proper formatting
+- **article**: Journal articles
+- **report**: Technical reports
+- **math-heavy**: Documents with extensive mathematical content
+- **novel**: Fiction writing with proper formatting
+
+Create a project with a template:
+```python
+{
+  "tool": "project",
+  "arguments": {
+    "action": "create",
+    "name": "my-thesis",
+    "template": "thesis"
+  }
+}
+```
+
+## Security Features
+
+- **File Size Limits**: 100MB maximum file size (optimized for large documents)
+- **Path Validation**: Prevents directory traversal attacks
+- **Resource Limits**: CPU and memory usage controls
+- **Workspace Isolation**: All operations confined to designated workspace
+
+## Integration with Other MCP Servers
+
+TeXFlow integrates seamlessly with:
+- **ArXiv LaTeX MCP**: Import and process papers from ArXiv
+- **Manim MCP**: Generate animations from LaTeX equations
+- **Obsidian MCP**: Sync documentation and notes
+- **GitHub MCP**: Version control and collaboration
+
+## Error Handling
+
+TeXFlow includes intelligent error diagnosis:
+- Missing package detection and installation suggestions
+- Encoding issue resolution
+- Syntax error fixes
+- Citation and reference validation
+
+## Performance
+
+- Incremental compilation support
+- Smart caching for repeated builds
+- Parallel processing for multi-file projects
+- Optimized for large documents (tested with 500+ page documents)
+
+## Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues and feature requests, please use the [GitHub issue tracker](https://github.com/Wolvend/texflow-mcp/issues).
+
+## Acknowledgments
+
+Built on the Model Context Protocol (MCP) by Anthropic.
 
 ## Installation
 
